@@ -7,7 +7,7 @@ This comprehensive guide covers deploying the **RssBot Hybrid Microservices Plat
 The RssBot Platform is designed for **enterprise production deployments** with:
 
 - **🏗️ Hybrid Architecture**: Per-service connection optimization for performance and scalability
-- **⚡ High Performance**: Redis-cached service decisions with sub-millisecond lookups
+- **⚡ High Performance**: Redis-cached service decisions with sub-millisecond lookups  
 - **🔒 Enterprise Security**: Service authentication, input validation, audit logging
 - **📊 Comprehensive Monitoring**: Health checks, performance metrics, alerting
 - **🔄 Zero-Downtime Deployments**: Live configuration changes without service interruption
@@ -20,7 +20,7 @@ The RssBot Platform is designed for **enterprise production deployments** with:
 ```yaml
 # Compute Resources
 CPU: 4 cores minimum (8+ recommended)
-Memory: 8GB minimum (16GB+ recommended)
+Memory: 8GB minimum (16GB+ recommended)  
 Storage: 50GB minimum (SSD preferred)
 Network: 1Gbps minimum
 
@@ -161,7 +161,7 @@ spec:
             memory: "1Gi"
             cpu: "500m"
           limits:
-            memory: "2Gi"
+            memory: "2Gi" 
             cpu: "1000m"
 ```
 
@@ -213,7 +213,7 @@ GET /metrics                         # Prometheus metrics
 - memory_usage: < 80%
 - cpu_usage: < 70%
 
-# Business Metrics
+# Business Metrics  
 - requests_per_second: Monitor trends
 - active_services: All services healthy
 - message_processing_rate: RSS throughput
@@ -238,7 +238,7 @@ iptables -A INPUT -j DROP  # Drop all other traffic
 # Security middleware configuration
 SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
-    "X-Content-Type-Options": "nosniff",
+    "X-Content-Type-Options": "nosniff", 
     "X-XSS-Protection": "1; mode=block",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
     "Content-Security-Policy": "default-src 'self'"
@@ -253,7 +253,7 @@ SECURITY_HEADERS = {
 # Rolling deployment strategy
 1. Deploy new version to 33% of instances
 2. Health check new instances
-3. Route traffic gradually to new instances
+3. Route traffic gradually to new instances  
 4. Deploy to remaining instances
 5. Verify all instances healthy
 ```
@@ -267,7 +267,7 @@ curl -X POST http://load-balancer/admin/bulk-connection-methods \
      -H "X-Service-Token: $PROD_TOKEN" \
      -d '{
        "ai_svc": "router",      # High performance
-       "bot_svc": "rest",       # Scalability
+       "bot_svc": "rest",       # Scalability  
        "payment_svc": "rest"    # Security isolation
      }'
 ```
@@ -280,7 +280,7 @@ curl -X POST http://load-balancer/admin/bulk-connection-methods \
 # Database backups
 pg_dump -h $DB_HOST -U rssbot -d rssbot > backup_$(date +%Y%m%d_%H%M%S).sql
 
-# Redis backups
+# Redis backups  
 redis-cli --rdb dump.rdb
 
 # Configuration backups
@@ -310,7 +310,7 @@ kubectl rollout restart deployment/rssbot-platform
 # High-performance configuration
 ROUTER_SERVICES = [
     "ai_svc",          # AI processing needs speed
-    "formatting_svc",  # Content formatting
+    "formatting_svc",  # Content formatting  
     "user_svc"         # User data queries
 ]
 
@@ -324,7 +324,7 @@ REST_SERVICES = [
 # Apply optimizations
 for service in ROUTER_SERVICES:
     await update_service_method(service, "router")
-
+    
 for service in REST_SERVICES:
     await update_service_method(service, "rest")
 ```
@@ -365,7 +365,7 @@ kubectl top pods -n rssbot
 
 #### 2. Slow Service Responses
 ```bash
-# Check cache performance
+# Check cache performance  
 curl -H "X-Service-Token: $TOKEN" \
      http://platform:8004/admin/cache/stats
 
@@ -427,7 +427,7 @@ spec:
 redis.maxmemory: 8GB
 redis.max-connections: 10000
 
-# Database scaling
+# Database scaling  
 postgresql.shared_buffers: 4GB
 postgresql.max_connections: 500
 
@@ -442,7 +442,7 @@ memory.limits: 8GB
 
 - [ ] **Security**: Strong passwords, encrypted connections, firewall rules
 - [ ] **Performance**: Redis configured, database optimized, resource limits set
-- [ ] **Monitoring**: Health checks, metrics collection, alerting configured
+- [ ] **Monitoring**: Health checks, metrics collection, alerting configured  
 - [ ] **Backup**: Database backup, Redis backup, configuration backup
 - [ ] **Documentation**: Runbooks, incident procedures, contact information
 

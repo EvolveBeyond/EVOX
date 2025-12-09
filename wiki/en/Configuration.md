@@ -7,7 +7,9 @@ Complete configuration reference for RssBot Platform environment variables, serv
 RssBot Platform uses a **hierarchical configuration system** with the following priority order:
 
 1. **Environment Variables** (highest priority)
+
 2. **`.env` File**
+
 3. **Code Defaults** (lowest priority)
 
 ## 🔧 Environment Variables Reference
@@ -284,7 +286,9 @@ curl -X POST http://localhost:8004/services/{service_name}/connection-method \
 
 # Available methods:
 # - router: Direct function calls (fastest)
+
 # - rest: HTTP API calls (most scalable)
+
 # - hybrid: Intelligent switching (best of both)
 # - disabled: Service disabled
 ```
@@ -465,7 +469,6 @@ RssBot Platform automatically validates critical configuration:
 class ConfigValidator:
     def validate_production_config(self, config: Config):
         errors = []
-
         if config.is_production():
             if config.service_token == "dev_service_token_change_in_production":
                 errors.append("SERVICE_TOKEN must be changed in production")
@@ -475,6 +478,7 @@ class ConfigValidator:
 
             if not config.telegram_webhook_mode:
                 errors.append("Production should use webhook mode")
+
 
         if errors:
             raise ConfigurationError("\n".join(errors))
@@ -493,6 +497,7 @@ curl http://localhost:8004/admin/config/validate
 curl http://localhost:8004/admin/config/test-database
 
 # Test Redis connection
+
 curl http://localhost:8004/admin/config/test-redis
 ```
 

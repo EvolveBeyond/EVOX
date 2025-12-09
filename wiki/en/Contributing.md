@@ -222,7 +222,6 @@ async def process_services(
                 status_code=500,
                 detail=f"Failed to configure {service_name}: {str(e)}"
             )
-
     return results
 ```
 
@@ -308,7 +307,6 @@ async def configure_service(service_name: str, method: str) -> bool:
 
         # Configure service
         await service.set_connection_method(method)
-
     except ServiceNotFoundError:
         # Re-raise specific exceptions
         raise
@@ -345,7 +343,6 @@ from rssbot.discovery.cached_registry import CachedServiceRegistry
 
 class TestCachedServiceRegistry:
     """Test suite for CachedServiceRegistry."""
-
     @pytest.fixture
     async def registry(self):
         """Create test registry instance."""
@@ -354,7 +351,6 @@ class TestCachedServiceRegistry:
         registry._redis = AsyncMock()
         registry._redis_available = True
         return registry
-
     @pytest.mark.asyncio
     async def test_should_use_router_returns_true_for_router_services(self, registry):
         """Test that router services return True for router decision."""

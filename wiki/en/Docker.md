@@ -19,7 +19,7 @@ The RSS Bot platform provides flexible Docker deployment options:
 # Ubuntu/Debian
 sudo apt update && sudo apt install docker.io docker-compose
 
-# Arch Linux
+# Arch Linux  
 sudo pacman -S docker docker-compose
 
 # macOS
@@ -64,7 +64,7 @@ docker-compose -f infra/docker-compose.yml down
 
 #### Infrastructure Containers
 - **PostgreSQL**: Official postgres:15-alpine image
-- **Redis**: Official redis:7-alpine image
+- **Redis**: Official redis:7-alpine image  
 - **Nginx**: Custom configuration for reverse proxy
 
 #### Application Containers
@@ -288,8 +288,8 @@ services:
   redis:
     image: redis:7-alpine
     command: >
-      redis-server
-      --maxmemory 256mb
+      redis-server 
+      --maxmemory 256mb 
       --maxmemory-policy allkeys-lru
       --appendonly yes
     volumes:
@@ -365,7 +365,7 @@ services:
     image: postgres:15-alpine
     environment:
       POSTGRES_DB: rssbot
-      POSTGRES_USER: rssbot
+      POSTGRES_USER: rssbot  
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -447,7 +447,7 @@ if [[ -n "$DOCKER_REGISTRY" ]]; then
     docker tag rssbot:production $DOCKER_REGISTRY/rssbot:latest
     docker tag rssbot/db:latest $DOCKER_REGISTRY/rssbot-db:latest
     docker tag rssbot/bot:latest $DOCKER_REGISTRY/rssbot-bot:latest
-
+    
     echo "Images tagged for registry: $DOCKER_REGISTRY"
 fi
 
@@ -468,7 +468,7 @@ case $ENVIRONMENT in
     "dev"|"development")
         COMPOSE_FILE="infra/docker-compose.dev.yml"
         ;;
-    "prod"|"production")
+    "prod"|"production") 
         COMPOSE_FILE="infra/docker-compose.prod.yml"
         ;;
     "router")
@@ -539,7 +539,7 @@ docker system df
 echo -e "\n🌐 Networks:"
 docker network ls | grep rssbot
 
-# Volume status
+# Volume status  
 echo -e "\n📁 Volumes:"
 docker volume ls | grep rssbot
 ```
@@ -572,15 +572,15 @@ services:
     tmpfs:
       - /tmp
       - /var/log
-
+    
     # Resource limits
     mem_limit: 512m
     cpus: 0.5
-
+    
     # Security options
     security_opt:
       - no-new-privileges:true
-
+    
     # Network isolation
     networks:
       - app_network
@@ -696,7 +696,7 @@ services:
       - /data
 
   app-test:
-    build:
+    build: 
       context: ..
       dockerfile: infra/Dockerfile.service
     environment:

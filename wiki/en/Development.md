@@ -109,6 +109,7 @@ async def process_services(
     """
     Process multiple services with specified connection method.
 
+
     Args:
         service_names: List of service names to process
         connection_method: How services should connect
@@ -189,6 +190,7 @@ class CachedServiceRegistry:
             ValueError: If service_name is empty or invalid format
             CacheConnectionError: If Redis is down and database is unreachable
 
+
         Example:
             ```python
             # Check AI service connection method
@@ -214,7 +216,6 @@ from rssbot.models.service_registry import ConnectionMethod
 
 class TestCachedServiceRegistry:
     """Comprehensive test suite for CachedServiceRegistry."""
-
     @pytest.fixture
     async def mock_registry(self) -> CachedServiceRegistry:
         """Create mock registry for testing."""
@@ -232,9 +233,11 @@ class TestCachedServiceRegistry:
         with pytest.raises(ValueError, match="service_name must be non-empty"):
             await mock_registry.should_use_router("")
 
+
         # Test None input
         with pytest.raises(ValueError):
             await mock_registry.should_use_router(None)  # type: ignore
+
 
     @pytest.mark.asyncio
     async def test_should_use_router_returns_correct_decision(
@@ -245,6 +248,7 @@ class TestCachedServiceRegistry:
         mock_registry._get_cached_connection_method = AsyncMock(
             return_value=ConnectionMethod.ROUTER
         )
+
 
         # Act
         result = await mock_registry.should_use_router("ai_svc")
@@ -391,7 +395,9 @@ async def process_data(
         else:
             final_result = processed_data
 
+
         processing_time = (time.time() - start_time) * 1000
+
 
         return ProcessResponse(
             result=final_result,
@@ -403,7 +409,7 @@ async def process_data(
             },
             processing_time_ms=processing_time
         )
-
+        
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -416,7 +422,7 @@ async def get_service_dependencies(
 ) -> Dict[str, List[str]]:
     """
     Get service dependencies for monitoring.
-
+    
     Returns:
         Dictionary of service dependencies
     """
@@ -523,7 +529,7 @@ from .models import ProcessRequest, ProcessResponse
 
 class TestNewService:
     """Test suite for New Service."""
-
+    
     @pytest.fixture
     def client(self):
         """Create test client."""
@@ -533,55 +539,55 @@ class TestNewService:
     def mock_ai_service(self):
         """Mock AI service dependency."""
         return AsyncMock()
-
+    
     @pytest.fixture
     def mock_formatting_service(self):
         """Mock formatting service dependency."""
         return AsyncMock()
-
+    
     def test_health_check(self, client):
         """Test health check endpoint."""
         response = client.get("/health")
         assert response.status_code == 200
-
+        
         data = response.json()
         assert data["status"] == "healthy"
         assert data["service"] == "new_svc"
         assert "version" in data
-
+    
     @patch('services.new_svc.main.verify_service_token')
     async def test_process_data_success(self, mock_token, client, mock_ai_service, mock_formatting_service):
         """Test successful data processing."""
         # Arrange
         mock_token.return_value = "valid_token"
-
+        
         with patch('services.new_svc.main.ai_service', mock_ai_service), \
              patch('services.new_svc.main.formatting_service', mock_formatting_service):
-
+            
             mock_ai_service.process.return_value = {"result": "processed data"}
             mock_formatting_service.format.return_value = {"formatted_content": "formatted data"}
-
+            
             request_data = {
                 "data": "test data",
                 "options": {"use_ai": True, "format": True}
             }
-
+            
             # Act
             response = client.post(
                 "/process",
                 json=request_data,
                 headers={"X-Service-Token": "valid_token"}
             )
-
+            
             # Assert
             assert response.status_code == 200
-
+            
             data = response.json()
             assert data["result"] == "formatted data"
             assert data["processing_time_ms"] > 0
             assert data["metadata"]["used_ai"] is True
             assert data["metadata"]["used_formatting"] is True
-
+    
     def test_process_data_validation(self, client):
         """Test request validation."""
         # Missing required field
@@ -590,21 +596,21 @@ class TestNewService:
             json={"options": {}},  # Missing 'data' field
             headers={"X-Service-Token": "valid_token"}
         )
-
+        
         assert response.status_code == 422  # Validation error
-
+    
     @patch('services.new_svc.main.verify_service_token')
     def test_get_dependencies(self, mock_token, client):
         """Test service dependencies endpoint."""
         mock_token.return_value = "valid_token"
-
+        
         response = client.get(
             "/services/dependencies",
             headers={"X-Service-Token": "valid_token"}
         )
-
+        
         assert response.status_code == 200
-
+        
         data = response.json()
         assert "required_services" in data
         assert "ai_svc" in data["required_services"]
@@ -635,7 +641,7 @@ curl -X POST http://localhost:8004/services/new_svc/connection-method \
     "description": "In-process mounting for maximum performance"
 }
 
-# Scalable scenario (REST mode)
+# Scalable scenario (REST mode)  
 {
     "connection_method": "rest",
     "description": "HTTP-based for independent scaling"
@@ -643,7 +649,7 @@ curl -X POST http://localhost:8004/services/new_svc/connection-method \
 
 # Reliable scenario (hybrid mode)
 {
-    "connection_method": "hybrid",
+    "connection_method": "hybrid", 
     "description": "Router preferred with REST fallback"
 }
 
@@ -683,12 +689,12 @@ class ServiceMetrics(BaseModel):
     cache_hit_ratio: float
     last_updated: datetime
 
-# 2. Update core controller
+# 2. Update core controller  
 # src/rssbot/core/controller.py
 async def get_service_metrics(self, service_name: str) -> ServiceMetrics:
     """Get comprehensive metrics for a service."""
     # Implementation with type safety
-
+    
 # 3. Add API endpoint
 @app.get("/services/{service_name}/metrics", response_model=ServiceMetrics)
 async def get_service_metrics_endpoint(service_name: str) -> ServiceMetrics:
@@ -709,7 +715,7 @@ class TestServiceMetrics:
 # src/rssbot/models/service_registry.py
 class ConnectionMethod(str, enum.Enum):
     ROUTER = "router"
-    REST = "rest"
+    REST = "rest" 
     HYBRID = "hybrid"
     DISABLED = "disabled"
     STREAMING = "streaming"  # New connection method
@@ -723,7 +729,7 @@ async def get_effective_connection_method(self, service_name: str) -> Connection
         return self._handle_streaming_connection(service)
 
 # 3. Update controller mounting
-# src/rssbot/core/controller.py
+# src/rssbot/core/controller.py  
 async def _mount_service(self, service_name: str, router_path: str) -> None:
     """Enhanced mounting supporting streaming connections."""
     # Add streaming support
@@ -744,7 +750,7 @@ pytest --cov=src/rssbot --cov-report=html
 
 # Run specific test categories
 pytest tests/unit/          # Unit tests
-pytest tests/integration/   # Integration tests
+pytest tests/integration/   # Integration tests  
 pytest tests/test_platform.py  # Platform tests
 
 # Run tests with performance profiling
@@ -763,10 +769,10 @@ pytest -m "redis"          # Only Redis-related tests
 class TestCachedRegistry:
     async def test_should_use_router_validates_input(self):
         """Test input validation."""
-
+        
     async def test_cache_invalidation_works(self):
         """Test cache invalidation."""
-
+        
     async def test_fallback_to_database(self):
         """Test Redis fallback behavior."""
 ```
@@ -777,10 +783,10 @@ class TestCachedRegistry:
 class TestServiceIntegration:
     async def test_ai_formatting_pipeline(self):
         """Test AI + formatting service pipeline."""
-
+        
     async def test_cache_database_sync(self):
         """Test cache and database synchronization."""
-
+        
     async def test_health_monitoring_updates_cache(self):
         """Test health monitoring integration."""
 ```
@@ -791,10 +797,10 @@ class TestServiceIntegration:
 class TestPerformance:
     async def test_service_decision_speed(self):
         """Test service decisions are sub-millisecond."""
-
+        
     async def test_concurrent_cache_access(self):
         """Test concurrent cache access performance."""
-
+        
     async def test_memory_usage_under_load(self):
         """Test memory usage under load."""
 ```
@@ -850,7 +856,7 @@ CACHE_SETTINGS = {
 async def warm_service_cache():
     """Pre-populate cache with frequently accessed data."""
     active_services = await get_active_services()
-
+    
     for service in active_services:
         # Pre-cache service decisions
         await cache_service_decision(service.name)
@@ -902,7 +908,7 @@ async def debug_cache():
     """Debug cache state."""
     return await get_cache_debug_info()
 
-@app.get("/debug/services")
+@app.get("/debug/services")  
 async def debug_services():
     """Debug service registry state."""
     return await get_service_debug_info()
@@ -951,7 +957,7 @@ When adding features, update:
 
 # Update user guides
 docs/GETTING_STARTED.md
-docs/DEVELOPMENT.md
+docs/DEVELOPMENT.md  
 docs/PRODUCTION.md
 
 # Update architecture docs

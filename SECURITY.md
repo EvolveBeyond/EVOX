@@ -1,224 +1,224 @@
-# Security Policy
+# 🔒 Security Policy
 
 ## Supported Versions
 
-We actively maintain and provide security updates for the following versions:
+We actively support security updates for the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 2.x     | ✅ Yes             |
+| 1.x     | ❌ No (Legacy)     |
 
-## Reporting a Vulnerability
+## Security Features
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+### 🛡️ Built-in Security
 
-Instead, please send security-related reports to: **security@rssbot.com**
+- **Service Token Authentication**: All inter-service communication requires authentication
+- **Input Validation**: 100% type-safe with Pydantic validation
+- **SQL Injection Protection**: SQLModel/SQLAlchemy ORM prevents SQL injection
+- **XSS Protection**: Content sanitization for web interfaces
+- **HTTPS/TLS**: All production communications encrypted
+- **Container Security**: Non-root user execution, minimal attack surface
 
-### What to Include
+### 🔐 Environment Security
 
-Please include the following information in your report:
+#### Critical Files (.env security)
 
-- **Description** of the vulnerability
-- **Steps to reproduce** the issue
-- **Potential impact** and attack scenarios
-- **Suggested fix** or mitigation (if known)
-- **Your contact information** for follow-up
-
-### Response Timeline
-
-- **Initial response**: Within 72 hours
-- **Status update**: Weekly until resolved
-- **Resolution target**: 90 days maximum
-- **Public disclosure**: After fix is released
-
-### Security Best Practices
-
-#### For Users
-
-1. **Change default tokens**
-   ```bash
-   # NEVER use the default service token in production
-   SERVICE_TOKEN=your_secure_random_token_here
-   ```
-
-2. **Use HTTPS in production**
-   ```bash
-   # Configure secure endpoints
-   TELEGRAM_WEBHOOK_URL=https://yourdomain.com/webhook
-   ```
-
-3. **Secure database connections**
-   ```bash
-   # Use SSL for database connections
-   DATABASE_URL=postgresql://user:pass@host:5432/db?sslmode=require
-   ```
-
-4. **Keep dependencies updated**
-   ```bash
-   rye sync --update-all
-   ```
-
-#### For Developers
-
-1. **Input validation**
-   ```python
-   # Always validate external inputs
-   from pydantic import BaseModel, validator
-   
-   class UserInput(BaseModel):
-       text: str
-       
-       @validator('text')
-       def validate_text(cls, v):
-           if len(v) > 1000:
-               raise ValueError('Text too long')
-           return v
-   ```
-
-2. **Service authentication**
-   ```python
-   # Use service tokens for inter-service communication
-   from src.rssbot.core.security import verify_service_token
-   
-   @router.post("/endpoint")
-   async def endpoint(token: str = Depends(verify_service_token)):
-       # Secured endpoint
-   ```
-
-3. **Environment variables**
-   ```python
-   # Never hardcode secrets
-   api_key = os.getenv("API_KEY")  # ✅ Good
-   api_key = "sk-123456789"        # ❌ Bad
-   ```
-
-### Security Features
-
-#### Built-in Protection
-
-1. **Service Token Authentication**
-   - All inter-service communication requires valid tokens
-   - Configurable token validation
-   - Automatic token rotation support
-
-2. **Input Sanitization**
-   - Pydantic models for request validation
-   - SQL injection prevention via SQLModel
-   - XSS protection in HTML responses
-
-3. **Rate Limiting**
-   - Configurable rate limits per endpoint
-   - Built-in DoS protection
-   - Telegram API rate limit compliance
-
-4. **Secure Defaults**
-   - HTTPS-only in production mode
-   - Secure cookie settings
-   - CORS properly configured
-
-#### Configuration Security
-
-1. **Environment Variables**
-   ```bash
-   # Required security settings
-   SERVICE_TOKEN=generate_secure_random_token
-   TELEGRAM_BOT_TOKEN=your_bot_token
-   DATABASE_URL=your_database_url
-   
-   # Optional but recommended
-   REDIS_URL=redis://localhost:6379/0
-   ENVIRONMENT=production
-   LOG_LEVEL=INFO
-   ```
-
-2. **Production Checklist**
-   - [ ] Change default service token
-   - [ ] Enable HTTPS for all endpoints
-   - [ ] Configure firewall rules
-   - [ ] Set up monitoring and logging
-   - [ ] Regular security updates
-   - [ ] Database connection encryption
-   - [ ] Backup and recovery procedures
-
-### Common Vulnerabilities
-
-#### Prevented by Design
-
-1. **SQL Injection**: SQLModel with parameterized queries
-2. **XSS**: Automatic HTML escaping in templates
-3. **CSRF**: Service token authentication
-4. **Path Traversal**: Restricted file access patterns
-5. **Information Disclosure**: Structured error responses
-
-#### Areas Requiring Attention
-
-1. **File Uploads**: Validate file types and sizes
-2. **External APIs**: Rate limiting and input validation
-3. **User Content**: Sanitization of RSS feed content
-4. **Webhook Security**: Verify Telegram webhook signatures
-
-### Security Testing
-
-#### Automated Scanning
-
+**⚠️ NEVER commit these files:**
 ```bash
-# Run security checks
-rye run bandit -r src/
-rye run safety check
-rye run semgrep --config=auto src/
+# These files contain sensitive data
+.env
+.env.local
+.env.production
+.env.staging
 ```
 
-#### Manual Testing
+**✅ Safe files to commit:**
+```bash
+# Template files only (no actual secrets)
+.env.example
+.env.template
+```
 
-1. **Authentication bypass testing**
-2. **Input validation testing**
-3. **API endpoint security review**
-4. **Configuration security audit**
+#### Required Environment Variables Protection
 
-### Security Updates
+**🔴 HIGH SECURITY - Never expose:**
+```bash
+SERVICE_TOKEN=             # Service authentication token
+DATABASE_URL=              # Database connection string with credentials
+REDIS_URL=                 # Redis connection with password
+TELEGRAM_BOT_TOKEN=        # Telegram Bot API token
+OPENAI_API_KEY=           # OpenAI API key
+STRIPE_SECRET_KEY=        # Stripe secret key
+STRIPE_WEBHOOK_SECRET=    # Stripe webhook signature key
+```
 
-#### Notification Channels
+**🟡 MEDIUM SECURITY - Environment dependent:**
+```bash
+POSTGRES_PASSWORD=        # Database password
+REDIS_PASSWORD=          # Redis authentication
+JWT_SECRET_KEY=          # JWT signing key
+ENCRYPTION_KEY=          # Data encryption key
+```
 
-- **GitHub Security Advisories**: Automatic notifications
-- **Release Notes**: Security fixes highlighted
-- **Email Alerts**: For critical vulnerabilities
+## Reporting Vulnerabilities
 
-#### Update Process
+### 📧 How to Report
 
-1. **Assess impact** of security updates
-2. **Test in staging** environment
-3. **Schedule maintenance** window
-4. **Apply updates** and verify
-5. **Monitor** for issues post-update
+**For security vulnerabilities, please do NOT use public GitHub issues.**
 
-### Compliance
+Instead, please report security vulnerabilities by emailing:
+**security@evolvebeyond.org** or create a private security advisory.
 
-#### Standards
+### 🔍 What to Include
 
-- **OWASP Top 10**: Regular assessment and mitigation
-- **CWE**: Common Weakness Enumeration awareness
-- **GDPR**: Privacy by design principles
-- **SOC 2**: Security control framework compliance
+Please include the following information:
+- **Type of vulnerability** (e.g., injection, authentication bypass)
+- **Location** of the vulnerability (file, function, endpoint)
+- **Proof of concept** or steps to reproduce
+- **Potential impact** of the vulnerability
+- **Suggested fix** (if you have one)
 
-#### Data Protection
+### ⏰ Response Timeline
 
-1. **Data Minimization**: Collect only necessary data
-2. **Encryption**: At rest and in transit
-3. **Access Control**: Role-based permissions
-4. **Audit Logging**: Security event tracking
-5. **Data Retention**: Automatic cleanup policies
+- **Initial Response**: Within 48 hours
+- **Vulnerability Assessment**: Within 1 week
+- **Fix Development**: Within 2-4 weeks (depending on severity)
+- **Public Disclosure**: After fix is deployed and users have time to update
 
-### Contact Information
+## Security Best Practices
 
-- **Security Team**: security@rssbot.com
-- **General Contact**: contact@rssbot.com
-- **GitHub**: @rssbot/security-team
+### 🏭 Production Deployment
 
-### Acknowledgments
+#### Environment Variables
+```bash
+# Use strong, unique tokens (64+ characters)
+SERVICE_TOKEN=$(openssl rand -hex 32)
 
-We appreciate the security research community and will acknowledge responsible disclosure contributors in our security advisories and release notes.
+# Use separate databases for different environments
+DATABASE_URL=postgresql://rssbot:SECURE_PASSWORD@db-host:5432/rssbot
+
+# Enable Redis AUTH
+REDIS_URL=redis://:SECURE_PASSWORD@redis-host:6379/0
+```
+
+#### Container Security
+```dockerfile
+# Run as non-root user
+USER rssbot
+
+# Read-only root filesystem
+--read-only
+
+# Drop capabilities
+--cap-drop=ALL
+```
+
+#### Network Security
+```bash
+# Firewall rules
+iptables -A INPUT -p tcp --dport 8004 -j ACCEPT  # Platform only
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT    # SSH only
+iptables -A INPUT -j DROP  # Drop everything else
+```
+
+### 🔧 Development Security
+
+#### Secret Management
+```bash
+# Use environment-specific .env files
+.env.development    # Safe for local development
+.env.staging        # Staging environment secrets
+.env.production     # Production secrets (never commit!)
+
+# Use tools like direnv for automatic loading
+echo "dotenv" >> .envrc
+```
+
+#### Code Security
+```python
+# Input validation
+from pydantic import BaseModel, validator
+
+class ServiceConfig(BaseModel):
+    service_token: str
+    
+    @validator('service_token')
+    def validate_token(cls, v):
+        if len(v) < 32:
+            raise ValueError('Service token must be at least 32 characters')
+        return v
+
+# SQL injection prevention (using SQLModel)
+async def get_user_by_id(user_id: int) -> Optional[User]:
+    # Safe: parameterized query
+    statement = select(User).where(User.id == user_id)
+    return await session.exec(statement).first()
+```
+
+## Security Hardening Checklist
+
+### ✅ Infrastructure
+- [ ] **Firewall configured** with minimal open ports
+- [ ] **HTTPS/TLS enabled** for all external communications
+- [ ] **Container security** (non-root user, minimal image)
+- [ ] **Network isolation** between services
+- [ ] **Regular security updates** for OS and dependencies
+
+### ✅ Application
+- [ ] **Strong service tokens** (64+ characters, randomly generated)
+- [ ] **Input validation** on all endpoints
+- [ ] **SQL injection protection** (ORM usage)
+- [ ] **XSS protection** for web interfaces
+- [ ] **Rate limiting** on public endpoints
+- [ ] **Audit logging** for security events
+
+### ✅ Data Protection
+- [ ] **Database encryption** at rest and in transit
+- [ ] **Redis AUTH enabled** with strong password
+- [ ] **Secret rotation** procedures in place
+- [ ] **Backup encryption** for data dumps
+- [ ] **GDPR compliance** for user data
+
+### ✅ Monitoring
+- [ ] **Security alerts** for failed authentications
+- [ ] **Anomaly detection** for unusual access patterns
+- [ ] **Log monitoring** for security events
+- [ ] **Vulnerability scanning** in CI/CD pipeline
+- [ ] **Dependency security** monitoring (Snyk, etc.)
+
+## Known Security Considerations
+
+### 🔍 Current Limitations
+
+1. **Service Discovery**: Redis-cached registry relies on network security
+2. **Inter-service Auth**: Token-based (consider mutual TLS for enhanced security)
+3. **Session Management**: Stateless tokens (consider session revocation)
+
+### 🚀 Security Roadmap
+
+- **Mutual TLS**: End-to-end encryption between services
+- **OAuth2/OIDC**: Enhanced authentication for external integrations
+- **Key Rotation**: Automatic secret rotation
+- **Zero-Trust**: Service mesh with comprehensive security policies
+
+## Compliance
+
+### 📋 Standards
+
+This platform follows security best practices from:
+- **OWASP Top 10**: Web application security
+- **NIST Cybersecurity Framework**: Overall security posture
+- **CIS Controls**: Critical security controls
+- **GDPR**: Data protection compliance
+
+### 🏆 Security Features
+
+- **Secure by Default**: All security features enabled by default
+- **Defense in Depth**: Multiple layers of security controls
+- **Least Privilege**: Minimal permissions and access rights
+- **Fail Secure**: Secure defaults when security checks fail
 
 ---
 
-**Last Updated**: 2024-01-01  
-**Next Review**: 2024-04-01
+**Security is a shared responsibility. Please help us maintain the highest security standards by following these guidelines and reporting any concerns promptly.**

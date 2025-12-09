@@ -10,23 +10,24 @@
 - [راهنمای شروع](fa/راهنمای-شروع)
 
 ## 🏗️ Architecture
-- [Architecture](en/ARCHITECTURE)
-- [New Architecture](en/NEW_ARCHITECTURE)
-- [Migration Guide](en/ARCHITECTURE_MIGRATION_SUMMARY)
-- [معماری سیستم](fa/معماری-سیستم)
+- [Architecture Overview](en/ARCHITECTURE)
+- [New Architecture Guide](en/NEW_ARCHITECTURE)
+- [Migration Summary](en/ARCHITECTURE_MIGRATION_SUMMARY)
+- [راهنمای مهاجرت معماری](fa/راهنمای-مهاجرت-معماری)
 
 ## 👨‍💻 Development
 - [Development Guide](en/DEVELOPMENT)
+- [Contributing](en/CONTRIBUTING)
 - [API Reference](en/API)
-- [Contributing](CONTRIBUTING)
 
 ## 🚀 Deployment
-- [Production](en/PRODUCTION)
+- [Production Guide](en/PRODUCTION)
 - [Docker Guide](en/DOCKER)
+- [Deployment Checklist](en/DEPLOYMENT_CHECKLIST)
+
+## 📋 Project Management
+- [Project Status](en/PROJECT_STATUS)
+- [Migration Summary](en/MIGRATION_SUMMARY)
 
 ## 🔒 Security
 - [Security Policy](SECURITY)
-
-## 📋 Project Info
-- [GitHub Ready](en/GITHUB_READY_SUMMARY)
-- [License](LICENSE)

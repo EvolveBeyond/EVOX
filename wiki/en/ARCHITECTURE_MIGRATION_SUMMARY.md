@@ -1,10 +1,10 @@
-# 🏗️ خلاصه مهاجرت معماری: از Controller Service به Core Platform
+# 🏗️ Architecture Migration Summary: From Controller Service to Core Platform
 
-## تغییرات اساسی انجام شده
+## Fundamental Changes Implemented
 
-### ✅ قبل: Controller در services/
+### ✅ Before: Controller in services/
 ```
-services/controller_svc/main.py (650+ خط کد)
+services/controller_svc/main.py (650+ lines of code)
 ├── Service discovery logic
 ├── Router mounting logic  
 ├── Health monitoring
@@ -14,145 +14,143 @@ services/controller_svc/main.py (650+ خط کد)
 └── All core platform logic
 ```
 
-### 🚀 بعد: Core Platform در src/rssbot/
+### 🚀 After: Core Platform in src/rssbot/
 ```
 src/rssbot/
-├── core/controller.py          # منطق اصلی پلتفرم
-├── discovery/cached_registry.py # مدیریت رجیستری با کش
-├── models/service_registry.py   # مدل‌های پایگاه داده
-├── utils/migration.py          # ابزارهای مهاجرت
-└── __main__.py                 # Entry point مستقل
+├── core/controller.py          # Main platform orchestration
+├── discovery/cached_registry.py # Redis-backed service registry
+├── models/service_registry.py   # Database models
+├── utils/migration.py          # Migration utilities
+└── __main__.py                 # Independent entry point
 
-services/controller_svc/main.py (30 خط ساده)
-└── فقط wrapper روی core platform
+services/controller_svc/main.py (56 lines - simple wrapper)
+└── Clean wrapper around core platform
 ```
 
-## مزایای جدید
+## New Architecture Benefits
 
-### 🎯 1. معماری تمیز
-- **منطق اصلی** در `src/rssbot/core/`
-- **سرویس controller** فقط wrapper ساده
-- **جداسازی مسئولیت‌ها** واضح و منطقی
+### 🎯 1. Clean Architecture
+- **Core Logic** centralized in `src/rssbot/core/`
+- **Controller Service** is now just a lightweight wrapper
+- **Clear Separation** of responsibilities
 
-### ⚡ 2. Entry Points مختلف
+### ⚡ 2. Multiple Entry Points
 ```bash
-# روش 1: مستقیماً از پلتفرم
+# Method 1: Direct core platform (recommended)
 python -m rssbot
 
-# روش 2: از controller service  
+# Method 2: Controller service wrapper
 python services/controller_svc/main.py
 
-# روش 3: با uvicorn
+# Method 3: Direct uvicorn
 uvicorn rssbot.core.controller:create_platform_app
 ```
 
-### 🔧 3. ماژولار و قابل استفاده مجدد
+### 🔧 3. Modular and Reusable
 ```python
-# استفاده در کدهای دیگر
+# Use in other projects
 from rssbot.core.controller import create_platform_app
 from rssbot.discovery.cached_registry import get_cached_registry
 
-# ایجاد اپلیکیشن
+# Create application
 app = await create_platform_app()
 
-# دسترسی به رجیستری
+# Access registry
 registry = await get_cached_registry()
 ```
 
-## تغییرات فایل‌ها
+## File Changes Summary
 
-### 📁 فایل‌های جدید
-| فایل | نقش |
-|------|-----|
-| `src/rssbot/core/controller.py` | هسته اصلی پلتفرم |
-| `src/rssbot/discovery/cached_registry.py` | سیستم کش Redis |
-| `src/rssbot/utils/migration.py` | ابزارهای مهاجرت |
-| `src/rssbot/__main__.py` | Entry point مستقل |
-| `NEW_ARCHITECTURE.md` | مستندات کامل |
+### 📁 New Files
+| File | Purpose |
+|------|---------|
+| `src/rssbot/core/controller.py` | Core platform engine |
+| `src/rssbot/discovery/cached_registry.py` | Redis caching system |
+| `src/rssbot/utils/migration.py` | Migration utilities |
+| `src/rssbot/__main__.py` | Independent entry point |
 
-### 🔄 فایل‌های تغییر یافته
-| فایل | تغییر |
-|------|------|
-| `services/controller_svc/main.py` | 650 خط → 30 خط (wrapper ساده) |
-| `src/rssbot/core/config.py` | اضافه شدن pydantic-settings |
-| `pyproject.toml` | اضافه شدن dependencies |
+### 🔄 Modified Files
+| File | Change |
+|------|--------|
+| `services/controller_svc/main.py` | 650+ lines → 56 lines (simple wrapper) |
+| `src/rssbot/core/config.py` | Added pydantic-settings support |
+| `pyproject.toml` | Added new dependencies |
 
-### ❌ فایل‌های حذف شده
-- تمام test files موقت
-- کد تکراری در controller
+### ❌ Removed Files
+- All temporary test files
+- Duplicate code in controller
 
-## مقایسه عملکرد
+## Performance Comparison
 
-### 📊 قبل vs بعد
-| بخش | قبل | بعد |
-|------|-----|-----|
-| خطوط کد controller | 650+ | 30 |
-| منطق platform | پراکنده | متمرکز |
-| قابلیت استفاده مجدد | ❌ | ✅ |
+### 📊 Before vs After
+| Aspect | Before | After |
+|--------|---------|-------|
+| Controller lines | 650+ | 56 |
+| Platform logic | Scattered | Centralized |
+| Reusability | ❌ | ✅ |
 | Entry points | 1 | 3 |
-| ماژولار بودن | ❌ | ✅ |
-| تست‌پذیری | سخت | آسان |
+| Modularity | ❌ | ✅ |
+| Testability | Difficult | Easy |
 
-## راهنمای استفاده
+## Migration Path
 
-### 🚀 راه‌اندازی سریع
+### 🚀 Quick Setup
 ```bash
-# نصب dependencies
+# Install dependencies
 rye sync
 
-# شروع پلتفرم (روش جدید)
+# Start platform (new method)
 python -m rssbot
 
-# یا روش قدیمی
+# Or legacy method
 python services/controller_svc/main.py
 ```
 
-### 🔍 بررسی سلامت
+### 🔍 Health Check
 ```bash
 curl http://localhost:8004/health
-# باید نشان دهد: "architecture": "per_service_core_controller"
+# Should show: "architecture": "per_service_core_controller"
 ```
 
-### ⚙️ مدیریت سرویس‌ها
+### ⚙️ Service Management
 ```bash
-# مشاهده تمام سرویس‌ها
+# View all services
 curl http://localhost:8004/services
 
-# تغییر connection method
+# Configure service
 curl -X POST http://localhost:8004/services/ai_svc/connection-method \
      -H "Content-Type: application/json" \
      -d '{"connection_method": "router"}'
 ```
 
-## مسیر مهاجرت
+## Legacy Compatibility
 
-### ✅ مراحل تکمیل شده
-1. ✅ انتقال منطق discovery به `src/rssbot/discovery/`
-2. ✅ انتقال منطق controller به `src/rssbot/core/`
-3. ✅ ساده‌سازی controller service
-4. ✅ ایجاد entry points مختلف
-5. ✅ تست و اعتبارسنجی
+### ✅ Backward Compatibility
+- ✅ All old endpoints still work
+- ✅ `LOCAL_ROUTER_MODE` still supported during transition
+- ✅ No breaking changes for existing deployments
+- ✅ Automatic migration available
 
-### 🔄 سازگاری با گذشته
-- ✅ همه endpoint های قدیمی کار می‌کنند
-- ✅ `LOCAL_ROUTER_MODE` هنوز پشتیبانی می‌شود
-- ✅ هیچ breaking change نداریم
-- ✅ Migration خودکار
+### 🔄 Migration Steps
+1. ✅ Core logic moved to `src/rssbot/discovery/`
+2. ✅ Controller simplified to wrapper
+3. ✅ Entry points created
+4. ✅ Testing and validation completed
 
-## نتیجه‌گیری
+## Results
 
-### 🎉 دستاوردها
-1. **معماری تمیز**: منطق اصلی در `src/` متمرکز شد
-2. **قابلیت استفاده مجدد**: Core platform مستقل و قابل import
-3. **ساده‌تر شدن**: Controller service از 650 خط به 30 خط رسید
-4. **انعطاف‌پذیری**: روش‌های مختلف برای اجرا
-5. **آینده‌نگری**: آماده برای توسعه و scaling
+### 🎉 Achievements
+1. **Clean Architecture**: Core platform centralized in `src/`
+2. **Reusability**: Core platform is independent and importable
+3. **Simplification**: Controller from 650+ lines to 56 lines
+4. **Flexibility**: Multiple execution methods
+5. **Future-ready**: Prepared for scaling and development
 
-### 📈 مزایای بلندمدت
-- تست‌پذیری بهتر
-- توسعه آسان‌تر
-- debugging راحت‌تر  
-- کد تمیز و خواناتر
-- معماری واقعی enterprise
+### 📈 Long-term Benefits
+- Better testability
+- Easier development
+- Simpler debugging  
+- Cleaner and readable code
+- True enterprise architecture
 
-**حالا RssBot یک پلتفرم واقعی hybrid microservices شده که هسته اصلی‌اش در `src/rssbot/` قرار داره و controller service فقط یک wrapper ساده است! 🚀**
+**The RssBot Platform has evolved from a simple controller service to a true hybrid microservices platform with core engine in `src/rssbot/` and lightweight service wrappers! 🚀**

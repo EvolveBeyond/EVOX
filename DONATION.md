@@ -4,7 +4,7 @@ Thank you for your interest in supporting the Evox framework! Your contributions
 
 ## Why Donate?
 
-Evox is an open-source project developed and maintained by volunteers. While the framework is free to use for everyone under the permissive MIT License, ongoing development requires time, effort, and sometimes financial resources for infrastructure, tools, and community support.
+Evox is an open-source project developed and maintained by volunteers. While the framework is free to use for everyone under the permissive Apache License 2.0, ongoing development requires time, effort, and sometimes financial resources for infrastructure, tools, and community support.
 
 Your support helps us:
 - Maintain and improve the core framework
@@ -35,21 +35,30 @@ Stay tuned for updates on these channels!
 
 Since Evox is built on top of excellent open-source foundations, you can also support:
 
-#### FastAPI Project
+#### Core Dependencies
 
-Evox heavily relies on FastAPI as its core. Consider supporting:
-- **Sebastián Ramírez (Tiangolo)** - Creator of FastAPI
-- GitHub: [@tiangolo](https://github.com/tiangolo)
-- GitHub Sponsors: [tiangolo](https://github.com/sponsors/tiangolo)
+Evox heavily relies on these essential projects:
 
-#### Other Dependencies
+- **FastAPI** - High performance, easy to learn, fast to code, ready for production API framework
+- **Typer** - Library for building CLI applications
+- **Pydantic** - Data validation and settings management using Python type annotations
+- **Uvicorn** - Lightning-fast ASGI server implementation
+- **HTTPX** - Fully featured HTTP client for Python 3
 
-Many other open-source projects make Evox possible:
-- Typer, Pydantic, Uvicorn, and others
+#### Additional Dependencies
+
+Other important projects that make Evox possible:
+
+- **Jinja2** - Modern and designer-friendly templating language for Python
+- **Tomli/TOML** - Library for parsing TOML configuration files
+- **Aiosqlite** - Asynchronous interface to SQLite
+- **Webbrowser** - Standard library module for web browser integration
+
+Supporting these projects helps ensure the entire ecosystem remains healthy and continues to evolve.
 
 ## Corporate Sponsorship
 
-For companies using Evox commercially, we encourage you to consider supporting the project's sustainability. While our MIT License imposes no obligations, we kindly suggest that organizations deriving significant value from Evox consider contributing back to its development.
+For companies using Evox commercially, we encourage you to consider supporting the project's sustainability. While our Apache License 2.0 imposes no obligations, we kindly suggest that organizations deriving significant value from Evox consider contributing back to its development.
 
 Corporate sponsors receive:
 - Recognition in our documentation and README

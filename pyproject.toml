@@ -1,29 +1,22 @@
 [project]
-name = "rss-bot"
-version = "0.1.0"
-description = "Modular Telegram-RSS microservice platform"
+name = "evox"
+version = "0.0.1-alpha"
+description = "Modern Python Microservices Framework - Data-Intent-Aware (Alpha)"
 authors = [
-    { name = "RSS Bot Team", email = "dev@rssbot.com" }
+    { name = "Evox Team", email = "dev@evox.dev" }
 ]
 dependencies = [
-    "aiogram>=3.0.0",
     "fastapi>=0.104.0",
-    "sqlmodel>=0.0.14",
     "uvicorn[standard]>=0.24.0",
     "httpx>=0.25.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
-    "redis>=5.0.0",
-    "dramatiq[redis]>=1.15.0",
-    "alembic>=1.12.0",
-    "python-dotenv>=1.0.0",
-    "psycopg2-binary>=2.9.0",
-    "sqlalchemy>=2.0.0",
-    "python-multipart>=0.0.6",
+    "typer>=0.9.0",
+    "tomli>=2.0.0",
+    "toml>=0.10.0",
+    "aiosqlite>=0.20.0",
     "jinja2>=3.1.0",
-    "aiofiles>=23.0.0",
-    "beautifulsoup4>=4.12.0",
-    "feedparser>=6.0.10",
+    "webbrowser>=0.1.0",
 ]
 requires-python = ">= 3.11"
 
@@ -47,7 +40,10 @@ dev-dependencies = [
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rssbot"]
+packages = ["evox"]
+
+[project.scripts]
+evox = "evox.cli.main:app"
 
 [tool.ruff]
 # Modern Python linting and formatting

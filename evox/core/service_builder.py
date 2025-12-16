@@ -7,8 +7,9 @@ It supports priority-aware request queuing and aggressive cache fallback mechani
 
 import asyncio
 import uvicorn
-from typing import Optional, Callable, Any, Dict, List
-from fastapi import FastAPI, APIRouter
+from typing import Optional, Callable, Any, Dict, List, Type, Union
+from fastapi import FastAPI, APIRouter, Request
+from functools import wraps
 
 from .queue import PriorityLevel, get_priority_queue
 
@@ -58,7 +59,79 @@ class ServiceBuilder:
     
     def build(self):
         """Build and finalize the service"""
+        # Register any controllers that were decorated
+        self._register_controllers()
         return self
+    
+    def _register_controllers(self):
+        """Register all decorated controllers with the service"""
+        global _controller_registry
+        
+        for controller_name, controller_info in _controller_registry.items():
+            controller_class = controller_info["class"]
+            prefix = controller_info["prefix"]
+            common_kwargs = controller_info["common_kwargs"]
+            
+            # Create controller instance
+            try:
+                controller_instance = controller_class()
+            except Exception as e:
+                print(f"Warning: Could not instantiate controller {controller_name}: {e}")
+                continue
+            
+            # Get all methods with _evox_methods attribute
+            for attr_name in dir(controller_instance):
+                if attr_name.startswith('_'):
+                    continue
+                    
+                attr = getattr(controller_instance, attr_name)
+                if callable(attr) and hasattr(attr, '_evox_methods'):
+                    # Bind the method to the instance
+                    bound_method = attr.__get__(controller_instance, controller_class)
+                    
+                    # Check if method needs request parameter
+                    import inspect
+                    sig = inspect.signature(bound_method)
+                    needs_request = 'request' not in sig.parameters
+                    
+                    # Register each method
+                    for method_info in attr._evox_methods:
+                        method = method_info["method"]
+                        paths = method_info["paths"]
+                        kwargs = method_info["kwargs"]
+                        
+                        # Merge common kwargs with method-specific kwargs
+                        merged_kwargs = {**common_kwargs, **kwargs}
+                        
+                        # Register for each path
+                        for path in paths:
+                            full_path = prefix + path if prefix else path
+                            
+                            if needs_request:
+                                # Create wrapped method with request injection
+                                original_method = bound_method
+                                
+                                @wraps(original_method)
+                                async def wrapped_method(request: Request, *args, **kwargs):
+                                    kwargs['request'] = request
+                                    return await original_method(*args, **kwargs)
+                                
+                                self.router.add_api_route(
+                                    path=full_path,
+                                    endpoint=wrapped_method,
+                                    methods=[method],
+                                    **merged_kwargs
+                                )
+                            else:
+                                self.router.add_api_route(
+                                    path=full_path,
+                                    endpoint=bound_method,
+                                    methods=[method],
+                                    **merged_kwargs
+                                )
+        
+        # Clear the registry after registration
+        _controller_registry.clear()
     
     def endpoint(self, path: str, methods: List[str] = ["GET"], **kwargs):
         """
@@ -246,3 +319,102 @@ def endpoint(path: str = None, methods: List[str] = ["GET"], **kwargs):
         }
         return func
     return decorator
+
+
+# Type aliases for parameter injection
+Param = Union
+Query = Union
+Body = Union
+
+
+# Controller decorator for class-based syntax
+_controller_registry = {}
+
+def Controller(prefix: str = "", **kwargs):
+    """
+    Decorator for creating controllers in class-based syntax
+    
+    Args:
+        prefix: Common prefix for all endpoints in this controller
+        **kwargs: Common configuration for all endpoints (cache, auth, etc.)
+    """
+    def decorator(cls):
+        # Store controller information for later registration
+        controller_info = {
+            "class": cls,
+            "prefix": prefix,
+            "common_kwargs": kwargs
+        }
+        _controller_registry[cls.__name__] = controller_info
+        return cls
+    return decorator
+
+
+# HTTP method decorators for class-based syntax
+class _MethodDecorator:
+    """Base class for HTTP method decorators in class-based syntax"""
+    
+    def __init__(self, *paths, **kwargs):
+        self.paths = paths
+        self.kwargs = kwargs
+    
+    def __call__(self, func):
+        # Store method information for later registration
+        if not hasattr(func, '_evox_methods'):
+            func._evox_methods = []
+        
+        method_info = {
+            "method": self.__class__.__name__.upper(),
+            "paths": self.paths,
+            "kwargs": self.kwargs
+        }
+        func._evox_methods.append(method_info)
+        return func
+
+
+class GET(_MethodDecorator):
+    """GET method decorator for class-based syntax"""
+    pass
+
+
+class POST(_MethodDecorator):
+    """POST method decorator for class-based syntax"""
+    pass
+
+
+class PUT(_MethodDecorator):
+    """PUT method decorator for class-based syntax"""
+    pass
+
+
+class DELETE(_MethodDecorator):
+    """DELETE method decorator for class-based syntax"""
+    pass
+
+
+# Intent decorator for both syntaxes
+class Intent:
+    """Intent decorator for declaring data intent behavior"""
+    
+    def __init__(self, **kwargs):
+        self.intent_config = kwargs
+    
+    def __call__(self, func_or_cls):
+        """Apply intent to a function or class"""
+        if hasattr(func_or_cls, '__dict__'):
+            # Class-based: apply to all methods
+            func_or_cls._evox_intent = self.intent_config
+        else:
+            # Function-based: apply to function
+            func_or_cls._evox_intent = self.intent_config
+        return func_or_cls
+    
+    @staticmethod
+    def cacheable(ttl: Union[int, str] = 300, **kwargs):
+        """Declare that data is cacheable"""
+        intent_config = {
+            "cacheable": True,
+            "ttl": ttl,
+            **kwargs
+        }
+        return Intent(**intent_config)

@@ -191,11 +191,46 @@ class PriorityAwareQueue:
         
         # Flag to indicate if queue is running
         self._running = True
+        
+        # Worker tasks
+        self._workers = []
+        
+        # Start worker threads
+        self._start_workers()
     
     def _generate_request_id(self) -> str:
         """Generate a unique request ID"""
         self._request_counter += 1
         return f"req_{int(time.time())}_{self._request_counter}"
+    
+    def _start_workers(self):
+        """Start worker threads for processing queues with optimized concurrency"""
+        # Start workers for each priority level
+        for priority in PriorityLevel:
+            worker_count = self.concurrency_limits[priority]
+            for i in range(worker_count):
+                worker_task = asyncio.create_task(self._worker_loop(priority))
+                self._workers.append(worker_task)
+    
+    async def _worker_loop(self, priority: PriorityLevel):
+        """Worker loop for processing requests from a specific priority queue"""
+        while self._running:
+            try:
+                # Wait for a request from this priority queue
+                request = await self.queues[priority].get()
+                
+                # Process the request
+                await self._execute_queued_request(request)
+                
+                # Mark task as done
+                self.queues[priority].task_done()
+                
+                # Update stats
+                self.stats.decrement_queue_length(priority)
+            except Exception as e:
+                # Log error but continue processing
+                self.stats.add_error(priority, e, f"Worker loop error for {priority.value}")
+                continue
     
     async def submit(self, 
                      func: Callable, 
@@ -223,6 +258,9 @@ class PriorityAwareQueue:
         # Generate unique request ID
         request_id = self._generate_request_id()
         
+        # Create future for result
+        future = asyncio.Future()
+        
         # Create queued request
         request = QueuedRequest(
             id=request_id,
@@ -234,26 +272,30 @@ class PriorityAwareQueue:
             timeout=timeout
         )
         
+        # Store future for this request
+        if not hasattr(self, '_request_futures'):
+            self._request_futures = {}
+        self._request_futures[request_id] = future
+        
         # Try to add to queue, reject if full
         try:
             self.queues[priority].put_nowait(request)
             self.stats.increment_queue_length(priority)
         except asyncio.QueueFull:
             self.stats.increment_admission_rejection(priority)
+            # Clean up future
+            if request_id in self._request_futures:
+                del self._request_futures[request_id]
             raise RuntimeError(f"Queue full for priority {priority.value}, request rejected")
         
         # Wait for result
-        # In a real implementation, this would use a more sophisticated mechanism
-        # For now, we'll simulate execution
         try:
-            # This is a simplified implementation
-            # In practice, this would coordinate with worker threads
-            result = await self._execute_request(request)
-            return result
-        finally:
-            self.stats.decrement_queue_length(priority)
+            return await future
+        except Exception:
+            # Re-raise any exceptions
+            raise
     
-    async def _execute_request(self, request: QueuedRequest) -> Any:
+    async def _execute_queued_request(self, request: QueuedRequest) -> Any:
         """
         Execute a queued request.
         
@@ -263,6 +305,9 @@ class PriorityAwareQueue:
         Returns:
             The result of the function execution
         """
+        result = None
+        exception = None
+        
         try:
             # Increment active worker count
             async with self._worker_lock:
@@ -279,17 +324,25 @@ class PriorityAwareQueue:
             else:
                 result = await request.func(*request.args, **request.kwargs)
                 
-            return result
-            
         except Exception as e:
             self.stats.add_error(request.priority, e, f"Executing request {request.id}")
-            raise
+            exception = e
         finally:
             # Decrement active worker count
             async with self._worker_lock:
                 self.active_workers[request.priority] = max(
                     0, self.active_workers[request.priority] - 1
                 )
+            
+            # Set result or exception on future
+            if hasattr(self, '_request_futures') and request.id in self._request_futures:
+                future = self._request_futures[request.id]
+                if exception:
+                    future.set_exception(exception)
+                else:
+                    future.set_result(result)
+                # Clean up
+                del self._request_futures[request.id]
     
     async def gather(self, 
                      *requests,
@@ -337,7 +390,22 @@ class PriorityAwareQueue:
     async def shutdown(self):
         """Shutdown the queue gracefully"""
         self._running = False
-        # In a real implementation, we would wait for all pending requests to complete
+        
+        # Cancel all worker tasks
+        for worker in self._workers:
+            if not worker.done():
+                worker.cancel()
+        
+        # Wait for workers to finish
+        if self._workers:
+            await asyncio.gather(*self._workers, return_exceptions=True)
+        
+        # Cancel any pending futures
+        if hasattr(self, '_request_futures'):
+            for future in self._request_futures.values():
+                if not future.done():
+                    future.cancel()
+            self._request_futures.clear()
 
 
 # Global queue instance

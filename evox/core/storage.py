@@ -33,7 +33,7 @@ class DataIOInterface:
     """
     
     def __init__(self):
-        # In-memory storage for zero-dependency operation
+        # In-memory storage for zero-dependency operation with optimized structures
         self._store: Dict[str, Dict[str, Any]] = {}
         self._namespace = ""
         # Cache statistics

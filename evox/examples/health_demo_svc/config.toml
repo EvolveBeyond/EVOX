@@ -1,0 +1,17 @@
+# Health Demo Service Configuration
+
+[service]
+name = "health-demo-service"
+port = 8004
+
+[storage]
+backend = "memory"
+
+[caching]
+default_ttl = 300
+enable_fallback = true
+
+[monitoring]
+enabled = true
+metrics_endpoint = "/metrics"
+health_endpoint = "/health"

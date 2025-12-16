@@ -10,12 +10,13 @@ This module exports all core components of the Evox framework including:
 - Priority queue for request management
 """
 
-from .service_builder import service, get, post, put, delete, endpoint
+from .service_builder import service, get, post, put, delete, endpoint, Controller, GET, POST, PUT, DELETE, Intent, Param, Query, Body
 from .proxy import proxy
 from .storage import data_io, data_intent
-from .inject import inject
+from .inject import inject, override, reset_overrides
 from .scheduler import scheduler
 from .queue import PriorityLevel, get_priority_queue, initialize_queue
+from .auth import auth, AuthManager, AuthConfig, CIAClassification
 
 __all__ = [
     "service", 
@@ -24,12 +25,27 @@ __all__ = [
     "put", 
     "delete", 
     "endpoint", 
+    "Controller",
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "Intent",
+    "Param",
+    "Query",
+    "Body",
     "proxy", 
     "data_io", 
     "data_intent", 
     "inject", 
+    "override",
+    "reset_overrides",
     "scheduler",
     "PriorityLevel",
     "get_priority_queue",
-    "initialize_queue"
+    "initialize_queue",
+    "auth",
+    "AuthManager",
+    "AuthConfig",
+    "CIAClassification"
 ]

@@ -1,16 +1,76 @@
+<<<<<<< HEAD
 # Evox - Modern Python Microservices Framework (Data-Intent-Aware)
+=======
+# Evox - Modern Python Microservices Framework (v0.0.2-alpha - Optimized & Rye-Native)
+>>>>>>> 8b4dd62 (Everything is being finalized and moving towards a stable version.)
 
-Evox is a modern, lightweight, plugin-first microservices framework built on FastAPI. It provides a simpler, more intuitive way to build distributed systems while retaining the full power of FastAPI through escape hatches.
+Evox is a modern microservices framework for Python, designed exclusively for Rye package management. Evox leverages FastAPI's built-in capabilities for optimal performance and developer experience.
 
-> **⚠️ Alpha Status**: Evox is in early alpha (v0.0.1-alpha) - not yet beta. Expect breaking changes. Ideas and implementation are experimental and evolving.
+This is not an application or bot framework — it is a pure framework aimed at changing how we think about building scalable Python backends in the modern era.
 
+<<<<<<< HEAD
 ## Key Features (Data-Intent-Aware Evolution)
+=======
+> **⚠️ Rye Exclusive**: Evox is designed exclusively for Rye — use `rye sync`, `rye run`, `rye add` for all operations. No support for pip requirements.txt or other tools.
+
+> **⚠️ Alpha Status**: Evox is in very early alpha (v0.0.2-alpha) - not yet beta. Expect breaking changes. Features are experimental and evolving.
+
+## Key Features (v0.0.2-alpha - Optimized & Rye-Native)
+
+### 🔄 Revolutionary Dual Syntax Support
+- **Function-based syntax** (default, minimal, FastAPI-familiar) for quick projects
+- **Class-based syntax** (opt-in, grouped, NestJS-inspired) for larger/team projects
+- **Both syntaxes equally supported** - no preference, both fully featured and performant
+- **Orchestrator auto-detection** of either syntax style
+>>>>>>> 8b4dd62 (Everything is being finalized and moving towards a stable version.)
 
 ### 🎯 Data-Intent-Aware Architecture
 - **Shift from "Storage-aware" to Data-Intent-aware**: System infers storage/cache/consistency behavior from explicit data intents
 - **No mandatory DB/ORM/Redis**: Defaults to in-memory (ephemeral, TTL-aware) for everything
 - **Unified `data_io` API**: `data_io.read(intent, key)` and `data_io.write(intent, obj/data)`
 - **Intent declarations**: Via annotations or config (e.g., `@data_intent.cacheable(ttl="1h", consistency="strong")`)
+
+### 🔐 Robust Authentication System
+- **JWT + Role-Based Access Control**: Secure authentication with flexible role management
+- **Context-Aware Proxy**: Automatic detection of internal vs external calls
+- **Multi-Method Endpoints**: Same path with different handlers per HTTP method
+- **Intent-Integrated Security**: Data intents can enforce authentication requirements
+
+### ⚡ Priority-Aware Concurrency
+- **Strict Priority Enforcement**: Heap-based queue ensures HIGH > MEDIUM > LOW execution
+- **Concurrency Caps**: Per-priority level limits prevent resource exhaustion
+- **Fair Scheduling**: FIFO within same priority levels
+
+### 🕵️ Observer-Only Management
+- **Self-Introspective Services**: Each service exposes READ-ONLY monitoring endpoints
+- **Optional Management Plane**: Separate coordinator service (observer pattern)
+- **Autonomous Operation**: Services operate independently without management dependency
+
+### ⚡ Priority-Aware Concurrency
+- **Strict Priority Enforcement**: Heap-based queue ensures HIGH > MEDIUM > LOW execution
+- **Concurrency Caps**: Per-priority level limits prevent resource exhaustion
+- **Fair Scheduling**: FIFO within same priority levels
+
+### 🕵️ Observer-Only Management
+- **Self-Introspective Services**: Each service exposes READ-ONLY monitoring endpoints
+- **Optional Management Plane**: Separate coordinator service (observer pattern)
+- **Autonomous Operation**: Services operate independently without management dependency
+
+### 🔐 Robust Authentication System
+- **JWT + Role-Based Access Control**: Secure authentication with flexible role management
+- **Context-Aware Proxy**: Automatic detection of internal vs external calls
+- **Multi-Method Endpoints**: Same path with different handlers per HTTP method
+- **Intent-Integrated Security**: Data intents can enforce authentication requirements
+
+### ⚡ Priority-Aware Concurrency
+- **Strict Priority Enforcement**: Heap-based queue ensures HIGH > MEDIUM > LOW execution
+- **Concurrency Caps**: Per-priority level limits prevent resource exhaustion
+- **Fair Scheduling**: FIFO within same priority levels
+
+### 🕵️ Observer-Only Management
+- **Self-Introspective Services**: Each service exposes READ-ONLY monitoring endpoints
+- **Optional Management Plane**: Separate coordinator service (observer pattern)
+- **Autonomous Operation**: Services operate independently without management dependency
 
 ### 🧼 Clean, Minimal Framework
 - **Zero external dependencies by default**: Perfect for dev/test/prototyping
@@ -42,7 +102,7 @@ Or with Rye:
 rye add evox
 ```
 
-## Quick Start
+## Quick Start: Function-based Syntax
 
 Create a new Evox project:
 
@@ -63,12 +123,142 @@ Run in development mode:
 evox run --dev
 ```
 
+Example function-based service (`basic_user_svc`):
+
+```python
+from evox import ServiceBuilder, Param, Body, Intent, inject
+from pydantic import BaseModel
+
+# Define data models
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    age: int
+
+# Create service
+service = ServiceBuilder("basic-user-service")
+
+# In-memory storage for demo purposes
+users_db = {}
+
+# Multi-method endpoint demonstrating different HTTP verbs
+@service.endpoint("/{user_id}", methods=["GET", "PUT", "DELETE"])
+@Intent(cacheable=True)  # This operation can be cached
+async def user_operations(user_id: str = Param(), update_data: UserUpdate = Body(None)):
+    """Handle user operations: GET, PUT, DELETE"""
+    if update_data:  # PUT request
+        if user_id in users_db:
+            # Update existing user
+            if update_data.name is not None:
+                users_db[user_id]["name"] = update_data.name
+            # ... update other fields
+            return {"message": "User updated", "user": users_db[user_id]}
+        else:
+            return {"error": "User not found"}, 404
+    
+    # Check if this is a DELETE request
+    import inspect
+    frame = inspect.currentframe()
+    request = frame.f_back.f_locals.get('request')
+    if request and request.method == "DELETE":
+        if user_id in users_db:
+            del users_db[user_id]
+            return {"message": "User deleted"}
+        else:
+            return {"error": "User not found"}, 404
+    
+    # GET request - retrieve user
+    if user_id in users_db:
+        return users_db[user_id]
+    else:
+        return {"error": "User not found"}, 404
+```
+
+## Advanced: Class-based Syntax
+
+Example class-based service (`advanced_items_svc`):
+
+```python
+from evox import ServiceBuilder, Controller, GET, POST, PUT, DELETE, Param, Query, Body, Intent
+from pydantic import BaseModel
+
+# Define data models
+class ItemCreate(BaseModel):
+    name: str
+    description: str
+    price: float
+    category: str
+
+class ItemUpdate(BaseModel):
+    name: str = None
+    description: str = None
+    price: float = None
+    category: str = None
+
+# Controller with common settings applied to all methods
+@Controller("/items", tags=["items"], version="v1")
+@Intent(cacheable=True)  # Default intent for all methods in this controller
+class ItemsController:
+    
+    # In-memory storage for demo purposes
+    items_db = {}
+    
+    # GET method with specific overrides
+    @GET("/{item_id}")
+    @Intent(cacheable=True, ttl=600)  # Override default with longer TTL
+    async def get_item(self, item_id: str = Param()):
+        """Retrieve a specific item by ID"""
+        if item_id in self.items_db:
+            return self.items_db[item_id]
+        else:
+            return {"error": "Item not found"}, 404
+    
+    # GET method for listing items with query parameters
+    @GET("/")
+    @Intent(cacheable=True, ttl=300)  # Cacheable list with 5-minute TTL
+    async def list_items(
+        self, 
+        category: str = Query(None),
+        min_price: float = Query(None),
+        max_price: float = Query(None)
+    ):
+        """List items with optional filtering"""
+        filtered_items = list(self.items_db.values())
+        
+        if category:
+            filtered_items = [item for item in filtered_items if item.get("category") == category]
+        
+        if min_price is not None:
+            filtered_items = [item for item in filtered_items if item.get("price", 0) >= min_price]
+        
+        return {"items": filtered_items}
+    
+    # POST method with strong consistency requirement
+    @POST("/")
+    @Intent(consistency="strong")  # Strong consistency for creation
+    async def create_item(self, item_data: ItemCreate = Body()):
+        """Create a new item"""
+        item_id = str(len(self.items_db) + 1)
+        self.items_db[item_id] = {
+            "id": item_id,
+            "name": item_data.name,
+            "description": item_data.description,
+            "price": item_data.price,
+            "category": item_data.category
+        }
+        return {"message": "Item created", "item": self.items_db[item_id]}, 201
+
+# Create service and register controller
+service = ServiceBuilder("advanced-items-service")
+service.register_controller(ItemsController)
+```
+
 ## Data-Intent-Aware Service Syntax
 
 Evox services use a clean, intent-driven syntax:
 
 ```python
-from evox.core import service, get, post, data_io, data_intent
+from evox.core import service, get, post, put, delete, data_io, data_intent, auth, inject
 
 # Create service
 svc = service("my_service") \
@@ -76,15 +266,17 @@ svc = service("my_service") \
     .health("/health") \
     .build()
 
-# Declare data intent
+# Declare data intent with security
 @data_intent.cacheable(ttl="1h", consistency="eventual")
+@auth.require_intent(intent_type="profile", required_roles=["user", "admin"])
 class UserProfile:
     def __init__(self, user_id: int, name: str):
         self.user_id = user_id
         self.name = name
 
-# Endpoint with intent-aware data IO
-@get("/users/{user_id}")
+# Multi-method endpoint with priority and auth
+@get("/users/{user_id}", priority="high")
+@auth.require_intent(intent_type="user_read", required_roles=["user", "admin"])
 async def get_user(user_id: int):
     # Read with automatic intent-based behavior
     user = await data_io.read(f"user:{user_id}")
@@ -93,6 +285,21 @@ async def get_user(user_id: int):
         # Write with intent (auto-cache for 1 hour)
         await data_io.write(f"user:{user_id}", user, ttl=3600)
     return user
+
+@put("/users/{user_id}", priority="high")
+@auth.require_intent(intent_type="user_write", required_roles=["user", "admin"])
+async def update_user(user_id: int, user_data: dict):
+    # Update user with injected dependencies
+    db = inject.db()
+    config = inject.config("user")
+    # ... update logic
+    return {"status": "updated"}
+
+@delete("/users/{user_id}", priority="low")
+@auth.require_intent(intent_type="user_delete", required_roles=["admin"])
+async def delete_user(user_id: int):
+    await data_io.delete(f"user:{user_id}")
+    return {"status": "deleted"}
 
 # Background task
 @svc.background_task(interval=60)
@@ -112,20 +319,41 @@ async def shutdown():
 ## CLI Commands
 
 - `evox new pj <name>`: Scaffold minimal project (Rye-optimized structure)
-- `evox new sv <name>`: Create service with data-intent template
-- `evox sync db`: Run optional migrations
-- `evox sync sv`: Re-scan services, validate prerequisites
-- `evox run --dev`: Uvicorn reload + verbose
-- `evox run`: Production mode
+- `evox new sv <name>`: Create service with dual-syntax template
+- `evox sync db`: Run optional migrations (triggers `rye sync` if dependencies changed)
+- `evox sync sv`: Re-scan services, validate prerequisites (respects Rye lock file)
+- `evox run --dev`: Uvicorn reload + verbose (Rye-aware)
+- `evox run`: Production mode (Rye-aware)
 - `evox status`: Show platform status
 - `evox cache invalidate <key>`: Invalidate cache
 - `evox test`: Run tests
 - `evox dashboard`: Open admin dashboard
-- `evox health`: Generate system health report (NEW!)
+- `evox health`: Generate system health report (uses FastAPI native docs)
+- `evox health --test connection`: Test storage and proxy connectivity
+- `evox health --test framework`: Test DI, priority queue enforcement, dual syntax, inject override, and proxy multi-method
+- `evox health --test services`: Test auth and cache fallback
+- `evox health --test all`: Run all self-tests
+
+## Context-Aware Service Proxy
+
+Evox provides intelligent service-to-service communication with automatic context detection:
+
+```python
+# Internal calls (fast, direct routing with internal tokens)
+user_data = await proxy.user_svc.get_user(123)
+
+# External calls (secure, HTTPS + full authentication)
+# Automatically enforced by the proxy
+
+# Multi-method endpoints on same path
+user = await proxy.user_svc.get_user(123)  # GET
+result = await proxy.user_svc.update_user(123, data)  # PUT
+status = await proxy.user_svc.delete_user(123)  # DELETE
+```
 
 ## Priority Queue Integration
 
-Evox now supports priority-aware request queuing:
+Evox now supports priority-aware request queuing with strict enforcement:
 
 ```python
 # Per-endpoint priority
@@ -154,9 +382,9 @@ async def get_data():
     return await fetch_from_source()
 ```
 
-## System Health Dashboard
+## Enhanced System Health Dashboard
 
-The new `evox health` command generates a comprehensive HTML report:
+The new `evox health` command generates a comprehensive HTML report with security insights:
 
 ```bash
 evox health
@@ -169,6 +397,8 @@ Features:
 - Cache statistics (hits/misses/stale data)
 - Active data intents and backends in use
 - Priority queue lengths and admission stats
+- Authentication status and security warnings
+- Proxy communication statistics (internal vs external)
 - Recent errors/warnings with detailed reasons
 - Dependency validation results
 
@@ -208,9 +438,37 @@ Evox runs with zero external dependencies by default:
 
 ## Examples
 
-The framework includes example services in `evox/examples/rssbot/`:
-- `user_svc`: User management with data intents
-- `storage_demo_svc`: Data IO demonstrations
+The framework includes modern, educational example services in `evox/examples/` that showcase Evox's revolutionary features:
+
+### `basic_user_svc` - Function-based syntax
+Simple CRUD service demonstrating:
+- Function-based syntax (default, minimal)
+- Multi-method endpoints
+- Data-intent annotations
+- Lazy inject.service for inter-service calls
+- Param/Body usage
+
+### `advanced_items_svc` - Class-based syntax
+Professional service showcasing:
+- Class-based syntax (opt-in, grouped)
+- @Controller with common settings
+- Multi-method with per-method override
+- Query/Param/Body type-safety
+- Intent integration
+
+### `storage_demo_svc` - Data-intent-aware storage
+Focused on storage capabilities:
+- Different intents (cacheable, strong consistency, eventual)
+- Unified storage API
+- Aggressive cache fallback
+
+### `health_demo_svc` - Self-introspection
+Observer-only management pattern:
+- Exposes /capabilities, /health endpoints
+- Optional management endpoints
+- Self-monitoring capabilities
+
+> Note: All examples use memory backend by default and are domain-agnostic, showcasing how modern backends should be written with Evox.
 
 ## Community & Contributing
 

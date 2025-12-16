@@ -1,24 +1,36 @@
 [project]
 name = "evox"
-version = "0.0.1-alpha"
-description = "Modern Python Microservices Framework - Data-Intent-Aware (Alpha)"
+version = "0.0.3-alpha"
+description = "Modern Python Microservices Framework - Data-Intent-Aware, Rye-Native"
 authors = [
     { name = "Evox Team", email = "dev@evox.dev" }
 ]
 dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "httpx>=0.25.0",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "typer>=0.9.0",
-    "tomli>=2.0.0",
-    "toml>=0.10.0",
-    "aiosqlite>=0.20.0",
-    "jinja2>=3.1.0",
-    "webbrowser>=0.1.0",
+    "fastapi>=0.104.0,<0.105.0",
+    "uvicorn[standard]>=0.24.0,<0.25.0",
+    "httpx>=0.25.0,<0.26.0",
+    "pydantic>=2.0.0,<3.0.0",
+    "pydantic-settings>=2.0.0,<3.0.0",
+    "typer>=0.9.0,<0.10.0",
+    "tomli>=2.0.0,<3.0.0",
+    "toml>=0.10.0,<0.11.0",
+    "aiosqlite>=0.20.0,<0.21.0",
+    "jinja2>=3.1.0,<4.0.0",
 ]
 requires-python = ">= 3.11"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+keywords = ["microservices", "framework", "data-intent-aware", "rye-native", "fastapi", "distributed-systems"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed"
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -27,13 +39,13 @@ build-backend = "hatchling.build"
 [tool.rye]
 managed = true
 dev-dependencies = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "httpx>=0.25.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-    "mypy>=1.5.0",
+    "pytest>=7.0.0,<8.0.0",
+    "pytest-asyncio>=0.21.0,<0.22.0",
+    "httpx>=0.25.0,<0.26.0",
+    "black>=23.0.0,<24.0.0",
+    "isort>=5.12.0,<6.0.0",
+    "flake8>=6.0.0,<7.0.0",
+    "mypy>=1.5.0,<2.0.0",
 ]
 
 [tool.hatch.metadata]
@@ -45,8 +57,18 @@ packages = ["evox"]
 [project.scripts]
 evox = "evox.cli.main:app"
 
+[project.optional-dependencies]
+redis = ["redis>=4.0.0,<5.0.0"]
+postgres = ["asyncpg>=0.28.0,<0.29.0", "sqlalchemy[asyncio]>=2.0.0,<3.0.0"]
+mongodb = ["motor>=3.0.0,<4.0.0"]
+test = ["pytest>=7.0.0,<8.0.0", "pytest-asyncio>=0.21.0,<0.22.0", "httpx>=0.25.0,<0.26.0"]
+
+[tool.rye.scripts]
+dev = "evox run --dev"
+health = "evox health"
+test = "evox test"
+
 [tool.ruff]
-# Modern Python linting and formatting
 line-length = 120
 target-version = "py311"
 
@@ -57,3 +79,7 @@ ignore = ["E501", "F401", "F841"]
 [tool.black]
 line-length = 120
 target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3

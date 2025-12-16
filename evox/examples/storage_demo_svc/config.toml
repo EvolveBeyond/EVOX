@@ -1,0 +1,17 @@
+# Storage Demo Service Configuration
+
+[service]
+name = "storage-demo-service"
+port = 8003
+
+[storage]
+backend = "memory"
+
+[caching]
+default_ttl = 300
+enable_fallback = true
+max_stale_on_error = 3600
+
+[caching.aggressive_fallback]
+enabled = true
+max_stale_duration = "24h"

@@ -1,13 +1,16 @@
+"""Evox Orchestrator - Generic service discovery and management
+
+This orchestrator provides dynamic service discovery and management without
+any domain-specific assumptions. It's designed to work with any Evox services.
+It operates as a pure observer-coordinator with no mandatory control functions.
 """
-Evox Orchestrator - Service discovery and management
-"""
+
 import os
 import importlib
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import FastAPI
 import uvicorn
-from src.rssbot.core.controller import create_platform_app as create_rssbot_app
 
 
 class Orchestrator:
@@ -18,15 +21,10 @@ class Orchestrator:
         self.app: Optional[FastAPI] = None
     
     async def initialize(self):
-        """Initialize the orchestrator with RssBot platform app"""
-        try:
-            self.app = await create_rssbot_app()
-            print("✅ Evox orchestrator initialized with RssBot platform")
-        except Exception as e:
-            print(f"⚠️  Failed to initialize RssBot platform: {e}")
-            # Fallback to minimal app
-            self.app = FastAPI(title="Evox Orchestrator")
-            self._setup_routes()
+        """Initialize the orchestrator with generic platform app"""
+        # Initialize with minimal app - no external dependencies
+        self.app = FastAPI(title="Evox Orchestrator")
+        self._setup_routes()
     
     def _setup_routes(self):
         """Setup orchestrator routes"""

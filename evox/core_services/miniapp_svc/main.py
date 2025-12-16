@@ -1,9 +1,20 @@
 """
-MiniApp Service - Admin dashboard for Evox platform
+MiniApp Service - Self-introspective dashboard for Evox service
+
+This service provides observer-only introspection capabilities:
+- Health monitoring
+- Configuration inspection
+- Performance metrics
+- Service capabilities
+
+Important: This is an OPTIONAL observer service. All operations are READ-ONLY.
+Services operate autonomously without dependency on this dashboard.
 """
 import tomli
-from evox.core import service, get, post
-from evox.core.storage import storage
+import time
+from evox.core import service, get, post, data_io
+from evox.core.storage import data_io as storage_data_io
+from evox.core.queue import get_priority_queue
 
 # Load configuration
 try:
@@ -12,55 +23,109 @@ try:
 except FileNotFoundError:
     config = {}
 
+# Service metadata
+SERVICE_METADATA = {
+    "name": "miniapp_svc",
+    "version": "0.1.0",
+    "description": "Self-introspective dashboard service",
+    "type": "observer-only"
+}
+
 # Create service
 svc = service("miniapp_svc") \
     .port(config.get("port", 8002)) \
     .health("/health") \
-    .caching(ttl=300) \
     .build()
 
-# Dashboard endpoint
+# Service information endpoint
 @get("/")
-async def dashboard():
-    return {"message": "Evox Admin Dashboard", "version": "0.1.0"}
+async def service_info():
+    """Get service information and capabilities"""
+    return {
+        "service": SERVICE_METADATA,
+        "endpoints": [
+            "/health",
+            "/config",
+            "/metrics",
+            "/capabilities"
+        ],
+        "status": "running",
+        "timestamp": time.time()
+    }
 
-# Health endpoint
+# Enhanced health endpoint
 @get("/health")
 async def health():
-    return {"status": "healthy", "service": "miniapp_svc"}
+    """Get enhanced health information"""
+    # Get queue stats if available
+    queue_stats = {}
+    try:
+        queue = get_priority_queue()
+        queue_stats = queue.get_stats()
+    except:
+        pass
+    
+    return {
+        "status": "healthy", 
+        "service": "miniapp_svc",
+        "timestamp": time.time(),
+        "queue_stats": queue_stats
+    }
 
-# Config management
+# Configuration inspection (READ-ONLY)
 @get("/config")
-async def get_config():
-    # In a real implementation, this would return the current configuration
-    return {"config": config}
+async def inspect_config():
+    """Inspect current service configuration (READ-ONLY)"""
+    return {
+        "config": config,
+        "metadata": SERVICE_METADATA,
+        "timestamp": time.time()
+    }
 
-@post("/config")
-async def update_config(new_config: dict):
-    # In a real implementation, this would update the configuration
-    return {"status": "updated", "config": new_config}
+# Performance metrics
+@get("/metrics")
+async def metrics():
+    """Get service performance metrics"""
+    # Get cache stats from data_io
+    cache_stats = {}
+    try:
+        cache_stats = storage_data_io.get_cache_stats()
+    except:
+        pass
+    
+    # Get queue stats
+    queue_stats = {}
+    try:
+        queue = get_priority_queue()
+        queue_stats = queue.get_stats()
+    except:
+        pass
+    
+    return {
+        "cache": cache_stats,
+        "queue": queue_stats,
+        "timestamp": time.time()
+    }
 
-# Cache management
-@get("/cache/stats")
-async def cache_stats():
-    # In a real implementation, this would return cache statistics
-    return {"cache_stats": "Not implemented"}
-
-@post("/cache/invalidate")
-async def invalidate_cache(keys: dict):
-    # In a real implementation, this would invalidate cache entries
-    return {"status": "invalidated", "keys": keys.get("keys", [])}
-
-# Service registry management
-@get("/registry")
-async def list_services():
-    # In a real implementation, this would list registered services
-    return {"services": []}
-
-@post("/registry/update")
-async def update_registry(service_info: dict):
-    # In a real implementation, this would update service registry
-    return {"status": "updated", "service": service_info.get("name")}
+# Service capabilities
+@get("/capabilities")
+async def capabilities():
+    """Get service capabilities and supported features"""
+    return {
+        "service": SERVICE_METADATA,
+        "capabilities": [
+            "self-introspection",
+            "health-monitoring",
+            "configuration-inspection",
+            "performance-metrics"
+        ],
+        "constraints": [
+            "read-only-access",
+            "observer-pattern",
+            "no-control-operations"
+        ],
+        "timestamp": time.time()
+    }
 
 if __name__ == "__main__":
     svc.run(dev=True)

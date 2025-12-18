@@ -237,59 +237,36 @@ class DataIntent:
         cls._data_intent = self.intent_config
         return cls
     
+    # Generator-based pattern for creating intent methods
     @staticmethod
-    def cacheable(ttl: str = "1h", consistency: str = "eventual", fallback: str = "normal", max_stale: str = "24h", **kwargs):
-        """Declare that data is cacheable
-        
-        Args:
-            ttl: Time-to-live for cached data (e.g., "1h", "30m")
-            consistency: Consistency level ("eventual", "strong")
-            fallback: Fallback strategy ("normal", "aggressive")
-            max_stale: Maximum stale duration for aggressive fallback
-            **kwargs: Additional intent configuration
-            
-        Example:
-            @data_intent.cacheable(ttl="1h", consistency="eventual", fallback="aggressive", max_stale="24h")
-            class UserProfile:
-                def __init__(self, user_id: int, name: str):
-                    self.user_id = user_id
-                    self.name = name
-        """
-        intent_config = {
-            "cacheable": True,
-            "ttl": ttl,
-            "consistency": consistency,
-            "fallback": fallback,
-            "max_stale": max_stale,
-            **kwargs
-        }
-        return DataIntent(**intent_config)
-    
-    @staticmethod
-    def strong_consistency(**kwargs):
-        """Declare that data requires strong consistency
-        
-        Args:
-            **kwargs: Additional intent configuration
-        """
-        intent_config = {
-            "consistency": "strong",
-            **kwargs
-        }
-        return DataIntent(**intent_config)
-    
-    @staticmethod
-    def eventual_ok(**kwargs):
-        """Declare that eventual consistency is acceptable
-        
-        Args:
-            **kwargs: Additional intent configuration
-        """
-        intent_config = {
-            "eventual_ok": True,
-            **kwargs
-        }
-        return DataIntent(**intent_config)
+    def _create_intent_method(name, **default_kwargs):
+        """Create an intent method dynamically"""
+        def intent_method(**kwargs):
+            intent_config = {**default_kwargs, **kwargs}
+            return DataIntent(**intent_config)
+        intent_method.__name__ = name
+        intent_method.__doc__ = f"""Declare {name.replace('_', ' ')} intent"""
+        return staticmethod(intent_method)
+
+# Generate intent methods dynamically
+DataIntent.cacheable = DataIntent._create_intent_method(
+    "cacheable",
+    cacheable=True,
+    ttl="1h",
+    consistency="eventual",
+    fallback="normal",
+    max_stale="24h"
+)
+
+DataIntent.strong_consistency = DataIntent._create_intent_method(
+    "strong_consistency",
+    consistency="strong"
+)
+
+DataIntent.eventual_ok = DataIntent._create_intent_method(
+    "eventual_ok",
+    eventual_ok=True
+)
 
 
 # Global data intent decorator

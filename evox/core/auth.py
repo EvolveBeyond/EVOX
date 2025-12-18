@@ -127,11 +127,9 @@ class AuthManager:
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid internal token")
     
-    def require_role(self, required_roles: Union[str, List[str]]):
-        """Decorator to require specific roles"""
-        if isinstance(required_roles, str):
-            required_roles = [required_roles]
-        
+    # Standardized decorator factory for authentication checks
+    def _create_auth_decorator(self, check_type: str, required_values=None, cia_classification=None):
+        """Create a standardized authentication decorator"""
         def decorator(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
@@ -152,9 +150,23 @@ class AuthManager:
                     credentials: HTTPAuthorizationCredentials = await self.security(request)
                     token_data = self.verify_token(credentials.credentials)
                     
-                    # Check roles
-                    if not any(role in token_data.roles for role in required_roles):
-                        raise HTTPException(status_code=403, detail="Insufficient permissions")
+                    # Perform check based on type
+                    if check_type == "role":
+                        if not any(role in token_data.roles for role in required_values):
+                            raise HTTPException(status_code=403, detail="Insufficient permissions")
+                    elif check_type == "scope":
+                        if not any(scope in token_data.scopes for scope in required_values):
+                            raise HTTPException(status_code=403, detail="Insufficient permissions")
+                    elif check_type == "intent":
+                        # Check roles if specified
+                        if required_values:  # required_values contains required_roles for intent
+                            if not any(role in token_data.roles for role in required_values):
+                                raise HTTPException(status_code=403, detail="Insufficient permissions for data intent operation")
+                        # Check CIA classification if specified
+                        if cia_classification:
+                            # For now, this is a placeholder - in a real implementation,
+                            # this would check user clearance against data classification
+                            pass
                     
                     return await func(*args, **kwargs)
                 except HTTPException:
@@ -164,99 +176,33 @@ class AuthManager:
             
             return wrapper
         return decorator
+    
+    def require_role(self, required_roles: Union[str, List[str]]):
+        """Decorator to require specific roles"""
+        if isinstance(required_roles, str):
+            required_roles = [required_roles]
+        return self._create_auth_decorator("role", required_roles)
     
     def require_scope(self, required_scopes: Union[str, List[str]]):
         """Decorator to require specific scopes"""
         if isinstance(required_scopes, str):
             required_scopes = [required_scopes]
-        
-        def decorator(func):
-            @wraps(func)
-            async def wrapper(*args, **kwargs):
-                # Get request from args or kwargs
-                request = None
-                for arg in args:
-                    if isinstance(arg, Request):
-                        request = arg
-                        break
-                if not request and 'request' in kwargs:
-                    request = kwargs['request']
-                
-                if not request:
-                    raise HTTPException(status_code=500, detail="Request object not found")
-                
-                # Extract token
-                try:
-                    credentials: HTTPAuthorizationCredentials = await self.security(request)
-                    token_data = self.verify_token(credentials.credentials)
-                    
-                    # Check scopes
-                    if not any(scope in token_data.scopes for scope in required_scopes):
-                        raise HTTPException(status_code=403, detail="Insufficient permissions")
-                    
-                    return await func(*args, **kwargs)
-                except HTTPException:
-                    raise
-                except Exception:
-                    raise HTTPException(status_code=401, detail="Authentication required")
-            
-            return wrapper
-        return decorator
+        return self._create_auth_decorator("scope", required_scopes)
     
     def require_cia(self, cia_classification: CIAClassification):
         """Decorator to require specific CIA classification clearance"""
+        # For CIA classification, we could integrate with more advanced auth
+        # For now, this is a placeholder that could be extended
         def decorator(func):
             @wraps(func)
             async def wrapper(*args, **kwargs):
-                # For CIA classification, we could integrate with more advanced auth
-                # For now, this is a placeholder that could be extended
                 return await func(*args, **kwargs)
-            
             return wrapper
         return decorator
     
     def require_intent(self, intent_type: str = None, required_roles: List[str] = None, cia_classification: CIAClassification = None):
         """Decorator to require specific roles for data intent operations with CIA classification support"""
-        def decorator(func):
-            @wraps(func)
-            async def wrapper(*args, **kwargs):
-                # Get request from args or kwargs
-                request = None
-                for arg in args:
-                    if isinstance(arg, Request):
-                        request = arg
-                        break
-                if not request and 'request' in kwargs:
-                    request = kwargs['request']
-                
-                if not request:
-                    raise HTTPException(status_code=500, detail="Request object not found")
-                
-                # Extract token
-                try:
-                    credentials: HTTPAuthorizationCredentials = await self.security(request)
-                    token_data = self.verify_token(credentials.credentials)
-                    
-                    # Check roles if specified
-                    if required_roles:
-                        if not any(role in token_data.roles for role in required_roles):
-                            raise HTTPException(status_code=403, detail="Insufficient permissions for data intent operation")
-                    
-                    # Check CIA classification if specified
-                    if cia_classification:
-                        # For now, this is a placeholder - in a real implementation,
-                        # this would check user clearance against data classification
-                        pass
-                    
-                except HTTPException:
-                    raise
-                except Exception:
-                    raise HTTPException(status_code=401, detail="Authentication required")
-                
-                return await func(*args, **kwargs)
-            
-            return wrapper
-        return decorator
+        return self._create_auth_decorator("intent", required_roles, cia_classification)
 
 
 # Global auth manager instance

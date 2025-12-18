@@ -16,10 +16,11 @@ The proxy automatically routes calls between services using the most appropriate
 (router, REST, hybrid) based on service configuration and availability.
 """
 
-from typing import Any, Dict, Optional, Callable, List
+from typing import Any, Dict, Optional, Callable, List, Union
 import httpx
 import asyncio
 from fastapi import Request
+from pydantic import BaseModel
 
 from .queue import PriorityLevel, get_priority_queue
 from .auth import get_auth_manager
@@ -62,6 +63,10 @@ class ServiceProxy:
         self._endpoints: Dict[str, Dict[str, Callable]] = {}
         # Track HTTP method for each call
         self._http_method = None
+        # Context-aware priority management
+        self._priority_context = {}
+        # Schema-based priority boosting
+        self._schema_priority_boost = {}
     
     def __getattr__(self, method_name: str) -> Callable:
         """
@@ -71,19 +76,22 @@ class ServiceProxy:
             # Don't proxy private methods
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{method_name}'")
         
-        async def proxy_method(*args, priority: str = "medium", **kwargs):
+        async def proxy_method(*args, priority: Union[str, None] = None, **kwargs):
             """
-            Proxy method with priority support.
+            Proxy method with intelligent, context-aware priority support.
             
             Args:
                 *args: Positional arguments for the service method
-                priority: Priority level for the request ("high", "medium", "low")
+                priority: Priority level for the request ("high", "medium", "low") or None for auto-detection
                 **kwargs: Keyword arguments for the service method
             """
             try:
+                # Determine priority based on context, schema, and requester
+                final_priority = self._determine_priority(priority, args, kwargs)
+                
                 # Submit to priority queue
                 queue = get_priority_queue()
-                priority_level = PriorityLevel(priority)
+                priority_level = PriorityLevel(final_priority)
                 
                 return await queue.submit(
                     self._execute_service_call,
@@ -96,6 +104,76 @@ class ServiceProxy:
                 raise
         
         return proxy_method
+    
+    def _determine_priority(self, explicit_priority: Optional[str], args: tuple, kwargs: dict) -> str:
+        """
+        Determine priority based on context, schema metadata, and requester.
+        
+        Priority sources (in order of precedence):
+        1. Explicit priority parameter
+        2. Schema-based priority boost
+        3. Context-aware priority from headers/payload
+        4. Default priority
+        """
+        # 1. Use explicit priority if provided
+        if explicit_priority:
+            return explicit_priority
+        
+        # 2. Check for schema-based priority boost
+        schema_priority = self._check_schema_priority(kwargs)
+        if schema_priority:
+            return schema_priority
+        
+        # 3. Check for context-aware priority from headers/payload
+        context_priority = self._check_context_priority(kwargs)
+        if context_priority:
+            return context_priority
+        
+        # 4. Default to medium priority
+        return "medium"
+    
+    def _check_schema_priority(self, kwargs: dict) -> Optional[str]:
+        """Check if any schema in kwargs has a priority boost"""
+        # Look for Pydantic models in kwargs
+        for key, value in kwargs.items():
+            if isinstance(value, BaseModel):
+                # Check if schema has priority metadata
+                schema_name = value.__class__.__name__
+                if schema_name in self._schema_priority_boost:
+                    return self._schema_priority_boost[schema_name]
+                
+                # Check for priority field in schema
+                if hasattr(value, 'priority') and value.priority:
+                    return value.priority
+        
+        return None
+    
+    def _check_context_priority(self, kwargs: dict) -> Optional[str]:
+        """Check for context-aware priority from headers or payload"""
+        # Check headers for priority information
+        headers = kwargs.get('headers', {})
+        if 'X-Priority' in headers:
+            priority = headers['X-Priority'].lower()
+            if priority in ['high', 'medium', 'low']:
+                return priority
+        
+        # Check for priority in payload
+        if 'priority' in kwargs:
+            priority = kwargs['priority'].lower()
+            if priority in ['high', 'medium', 'low']:
+                return priority
+        
+        return None
+    
+    def set_schema_priority_boost(self, schema_name: str, priority: str):
+        """Set priority boost for a specific schema"""
+        if priority in ['high', 'medium', 'low']:
+            self._schema_priority_boost[schema_name] = priority
+    
+    def set_context_priority(self, context_key: str, priority: str):
+        """Set context-based priority"""
+        if priority in ['high', 'medium', 'low']:
+            self._priority_context[context_key] = priority
     
     async def _execute_service_call(self, method_name: str, *args, **kwargs) -> Any:
         """
@@ -217,9 +295,12 @@ class ServiceProxy:
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             if http_method.upper() == 'GET':
+                # For GET requests, we typically don't send a body
+                # Extract query parameters from kwargs if available
+                query_params = kwargs.get('params', {})
                 response = await client.get(
                     endpoint_url,
-                    params=request_data,
+                    params=query_params,
                     headers=headers
                 )
             elif http_method.upper() == 'POST':
@@ -359,25 +440,30 @@ class HttpMethodProxyAccessor:
             self._service_proxy = ServiceProxy.get_instance(self.service_name)
         return self._service_proxy
     
+    # Generate HTTP method properties dynamically
+    def _create_method_proxy(self, method):
+        """Create a method proxy for the given HTTP method"""
+        return MethodProxy(self.service_proxy, method)
+    
     @property
     def get(self):
         """GET method proxy"""
-        return MethodProxy(self.service_proxy, "GET")
+        return self._create_method_proxy("GET")
     
     @property
     def post(self):
         """POST method proxy"""
-        return MethodProxy(self.service_proxy, "POST")
+        return self._create_method_proxy("POST")
     
     @property
     def put(self):
         """PUT method proxy"""
-        return MethodProxy(self.service_proxy, "PUT")
+        return self._create_method_proxy("PUT")
     
     @property
     def delete(self):
         """DELETE method proxy"""
-        return MethodProxy(self.service_proxy, "DELETE")
+        return self._create_method_proxy("DELETE")
     
     def __getattr__(self, attr_name: str):
         return getattr(self.service_proxy, attr_name)

@@ -31,42 +31,39 @@ service = ServiceBuilder("basic-user-service")
 users_db = {}
 
 # Multi-method endpoint demonstrating different HTTP verbs on the same resource
-@service.endpoint("/{user_id}", methods=["GET", "PUT", "DELETE"])
+# Split multi-method endpoint into separate endpoints for clarity and correctness
+@service.endpoint("/{user_id}", methods=["GET"])
 @Intent(cacheable=True)  # This operation can be cached
-async def user_operations(user_id: str = Param(), update_data: UserUpdate = Body(None)):
-    """
-    Handle user operations:
-    - GET: Retrieve user by ID
-    - PUT: Update user by ID
-    - DELETE: Remove user by ID
-    """
-    if update_data:  # PUT request
-        if user_id in users_db:
-            # Update existing user
-            if update_data.name is not None:
-                users_db[user_id]["name"] = update_data.name
-            if update_data.email is not None:
-                users_db[user_id]["email"] = update_data.email
-            if update_data.age is not None:
-                users_db[user_id]["age"] = update_data.age
-            return {"message": "User updated", "user": users_db[user_id]}
-        else:
-            return {"error": "User not found"}, 404
-    
-    # Check if this is a DELETE request
-    import inspect
-    frame = inspect.currentframe()
-    request = frame.f_back.f_locals.get('request')
-    if request and request.method == "DELETE":
-        if user_id in users_db:
-            del users_db[user_id]
-            return {"message": "User deleted"}
-        else:
-            return {"error": "User not found"}, 404
-    
-    # GET request - retrieve user
+async def get_user(user_id: str = Param()):
+    """Retrieve user by ID"""
     if user_id in users_db:
         return users_db[user_id]
+    else:
+        return {"error": "User not found"}, 404
+
+@service.endpoint("/{user_id}", methods=["PUT"])
+@Intent(consistency="strong")  # This operation requires strong consistency
+async def update_user(user_id: str = Param(), update_data: UserUpdate = Body()):
+    """Update user by ID"""
+    if user_id in users_db:
+        # Update existing user
+        if update_data.name is not None:
+            users_db[user_id]["name"] = update_data.name
+        if update_data.email is not None:
+            users_db[user_id]["email"] = update_data.email
+        if update_data.age is not None:
+            users_db[user_id]["age"] = update_data.age
+        return {"message": "User updated", "user": users_db[user_id]}
+    else:
+        return {"error": "User not found"}, 404
+
+@service.endpoint("/{user_id}", methods=["DELETE"])
+@Intent(consistency="strong")  # This operation requires strong consistency
+async def delete_user(user_id: str = Param()):
+    """Remove user by ID"""
+    if user_id in users_db:
+        del users_db[user_id]
+        return {"message": "User deleted"}
     else:
         return {"error": "User not found"}, 404
 

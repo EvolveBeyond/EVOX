@@ -7,9 +7,11 @@ It supports priority-aware request queuing and aggressive cache fallback mechani
 
 import asyncio
 import uvicorn
-from typing import Optional, Callable, Any, Dict, List, Type, Union
+from typing import Optional, Callable, Any, Dict, List, Type, Union, get_type_hints
 from fastapi import FastAPI, APIRouter, Request
 from functools import wraps
+from pydantic import BaseModel
+from typing import get_origin, get_args
 
 from .queue import PriorityLevel, get_priority_queue
 
@@ -46,6 +48,9 @@ class ServiceBuilder:
         @self.router.get(self._health_endpoint)
         async def health_check():
             return {"status": "healthy", "service": self.name}
+        
+        # Store service instance for DI access
+        self._instance = None
     
     def port(self, port: int):
         """Set the service port"""
@@ -61,7 +66,14 @@ class ServiceBuilder:
         """Build and finalize the service"""
         # Register any controllers that were decorated
         self._register_controllers()
+        # Store instance for DI
+        ServiceBuilder._instances[self.name] = self
         return self
+    
+    @classmethod
+    def get_instance(cls, name: str):
+        """Get service instance by name"""
+        return cls._instances.get(name)
     
     def _register_controllers(self):
         """Register all decorated controllers with the service"""
@@ -262,7 +274,6 @@ def get(path: str, **kwargs):
         return func
     return decorator
 
-
 def post(path: str, **kwargs):
     """POST endpoint decorator with priority support"""
     def decorator(func: Callable):
@@ -274,7 +285,6 @@ def post(path: str, **kwargs):
         }
         return func
     return decorator
-
 
 def put(path: str, **kwargs):
     """PUT endpoint decorator with priority support"""
@@ -288,7 +298,6 @@ def put(path: str, **kwargs):
         return func
     return decorator
 
-
 def delete(path: str, **kwargs):
     """DELETE endpoint decorator with priority support"""
     def decorator(func: Callable):
@@ -300,6 +309,43 @@ def delete(path: str, **kwargs):
         }
         return func
     return decorator
+
+def patch(path: str, **kwargs):
+    """PATCH endpoint decorator with priority support"""
+    def decorator(func: Callable):
+        # This will be used by ServiceBuilder.endpoint
+        func._evox_endpoint = {
+            "path": path,
+            "methods": ["PATCH"],
+            "kwargs": kwargs
+        }
+        return func
+    return decorator
+
+def head(path: str, **kwargs):
+    """HEAD endpoint decorator with priority support"""
+    def decorator(func: Callable):
+        # This will be used by ServiceBuilder.endpoint
+        func._evox_endpoint = {
+            "path": path,
+            "methods": ["HEAD"],
+            "kwargs": kwargs
+        }
+        return func
+    return decorator
+
+def options(path: str, **kwargs):
+    """OPTIONS endpoint decorator with priority support"""
+    def decorator(func: Callable):
+        # This will be used by ServiceBuilder.endpoint
+        func._evox_endpoint = {
+            "path": path,
+            "methods": ["OPTIONS"],
+            "kwargs": kwargs
+        }
+        return func
+    return decorator
+
 
 
 def endpoint(path: str = None, methods: List[str] = ["GET"], **kwargs):
@@ -321,14 +367,26 @@ def endpoint(path: str = None, methods: List[str] = ["GET"], **kwargs):
     return decorator
 
 
-# Type aliases for parameter injection
-Param = Union
-Query = Union
-Body = Union
+# Type aliases for parameter injection with Pydantic Annotated support
+try:
+    from typing import Annotated
+except ImportError:
+    # For Python < 3.9, use typing_extensions
+    from typing_extensions import Annotated
+
+# Enhanced parameter injection with type safety
+# Rationale: Using Pydantic's Annotated provides compile-time type checking
+# while maintaining runtime flexibility for dependency injection
+Param = lambda x, default=...: Annotated[x, "param"] if default is ... else Annotated[x, "param", default]
+Query = lambda x, default=...: Annotated[x, "query"] if default is ... else Annotated[x, "query", default]
+Body = lambda x, default=...: Annotated[x, "body"] if default is ... else Annotated[x, "body", default]
 
 
 # Controller decorator for class-based syntax
 _controller_registry = {}
+
+# Service instances registry
+ServiceBuilder._instances = {}
 
 def Controller(prefix: str = "", **kwargs):
     """
@@ -371,25 +429,22 @@ class _MethodDecorator:
         func._evox_methods.append(method_info)
         return func
 
+# HTTP method decorators for class-based syntax
+# Generate HTTP method decorators dynamically
+def _create_http_method_decorator(method_name):
+    """Create an HTTP method decorator class dynamically"""
+    return type(method_name, (_MethodDecorator,), {
+        "__doc__": f"{method_name} method decorator for class-based syntax"
+    })
 
-class GET(_MethodDecorator):
-    """GET method decorator for class-based syntax"""
-    pass
-
-
-class POST(_MethodDecorator):
-    """POST method decorator for class-based syntax"""
-    pass
-
-
-class PUT(_MethodDecorator):
-    """PUT method decorator for class-based syntax"""
-    pass
-
-
-class DELETE(_MethodDecorator):
-    """DELETE method decorator for class-based syntax"""
-    pass
+# Create HTTP method decorators using generator pattern
+GET = _create_http_method_decorator("GET")
+POST = _create_http_method_decorator("POST")
+PUT = _create_http_method_decorator("PUT")
+DELETE = _create_http_method_decorator("DELETE")
+PATCH = _create_http_method_decorator("PATCH")
+HEAD = _create_http_method_decorator("HEAD")
+OPTIONS = _create_http_method_decorator("OPTIONS")
 
 
 # Intent decorator for both syntaxes
@@ -409,12 +464,19 @@ class Intent:
             func_or_cls._evox_intent = self.intent_config
         return func_or_cls
     
+    # Generator-based pattern for creating intent methods
     @staticmethod
-    def cacheable(ttl: Union[int, str] = 300, **kwargs):
-        """Declare that data is cacheable"""
-        intent_config = {
-            "cacheable": True,
-            "ttl": ttl,
-            **kwargs
-        }
-        return Intent(**intent_config)
+    def _create_intent_method(name, **default_kwargs):
+        """Create an intent method dynamically"""
+        def intent_method(ttl: Union[int, str] = 300, **kwargs):
+            intent_config = {**default_kwargs, "ttl": ttl, **kwargs}
+            return Intent(**intent_config)
+        intent_method.__name__ = name
+        intent_method.__doc__ = f"""Declare {name.replace('_', ' ')} intent"""
+        return staticmethod(intent_method)
+
+# Generate intent methods dynamically
+Intent.cacheable = Intent._create_intent_method(
+    "cacheable",
+    cacheable=True
+)

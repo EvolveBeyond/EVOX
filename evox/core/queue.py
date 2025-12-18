@@ -15,6 +15,7 @@ priority-based execution of requests.
 
 import asyncio
 import time
+import heapq
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 from collections import defaultdict, deque
@@ -25,10 +26,19 @@ from .config import get_config
 
 
 class PriorityLevel(Enum):
-    """Priority levels for request queueing"""
-    HIGH = "high"      # User-facing, critical operations
-    MEDIUM = "medium"  # Default priority for most operations
-    LOW = "low"        # Background, non-critical operations
+    """Priority levels for request queueing with resource awareness"""
+    HIGH = "high"      # User-facing, critical operations - higher concurrency cap
+    MEDIUM = "medium"  # Default priority for most operations - moderate concurrency cap
+    LOW = "low"        # Background, non-critical operations - lower concurrency cap
+    
+    def get_concurrency_cap(self) -> int:
+        """Get concurrency cap based on priority level"""
+        caps = {
+            PriorityLevel.HIGH: 10,
+            PriorityLevel.MEDIUM: 5,
+            PriorityLevel.LOW: 2
+        }
+        return caps.get(self, 5)
 
 
 @dataclass
@@ -101,21 +111,23 @@ class PriorityQueueStats:
 
 class PriorityAwareQueue:
     """
-    Priority-aware execution queue for Evox framework.
+    Priority-aware execution queue for Evox framework with resource awareness.
     
     This queue manages concurrent execution of requests with different priority levels.
     It provides:
     
     1. Priority-based scheduling (HIGH > MEDIUM > LOW)
-    2. Concurrency limits per priority level
+    2. Dynamic concurrency limits per priority level based on resource usage
     3. Queue length limits with admission control
     4. Statistics tracking
+    5. Resource-aware priority adjustment
     
     Design Notes:
     - Uses asyncio queues for each priority level
     - Implements weighted round-robin scheduling favoring higher priorities
     - Provides backpressure handling through queue limits
     - Tracks comprehensive statistics for monitoring
+    - Adjusts concurrency based on system resource usage
     
     Good first issue: Add configurable weights for priority scheduling
     """
@@ -159,11 +171,16 @@ class PriorityAwareQueue:
         # Merge with provided config
         self.config = config
         
-        # Create queues for each priority level
-        self.queues: Dict[PriorityLevel, asyncio.Queue] = {
-            PriorityLevel.HIGH: asyncio.Queue(maxsize=self.config["queue_limits"]["high"]),
-            PriorityLevel.MEDIUM: asyncio.Queue(maxsize=self.config["queue_limits"]["medium"]),
-            PriorityLevel.LOW: asyncio.Queue(maxsize=self.config["queue_limits"]["low"])
+        # Use a single priority queue with heapq for better performance
+        # Priority levels: HIGH=1, MEDIUM=2, LOW=3 (lower number = higher priority)
+        self._task_heap: List[tuple] = []  # (priority_value, timestamp, request)
+        self._heap_lock = asyncio.Lock()
+        
+        # Map priority levels to numeric values for heap ordering
+        self._priority_values = {
+            PriorityLevel.HIGH: 1,
+            PriorityLevel.MEDIUM: 2,
+            PriorityLevel.LOW: 3
         }
         
         # Track active workers per priority
@@ -173,11 +190,21 @@ class PriorityAwareQueue:
             PriorityLevel.LOW: 0
         }
         
-        # Concurrency limits
-        self.concurrency_limits: Dict[PriorityLevel, int] = {
+        # Base concurrency limits
+        self.base_concurrency_limits: Dict[PriorityLevel, int] = {
             PriorityLevel.HIGH: self.config["concurrency_limits"]["high"],
             PriorityLevel.MEDIUM: self.config["concurrency_limits"]["medium"],
             PriorityLevel.LOW: self.config["concurrency_limits"]["low"]
+        }
+        
+        # Current concurrency limits (can be adjusted based on resource usage)
+        self.concurrency_limits = self.base_concurrency_limits.copy()
+        
+        # Resource usage tracking
+        self._resource_usage = {
+            "cpu": 0.0,
+            "memory": 0.0,
+            "io_wait": 0.0
         }
         
         # Statistics tracker
@@ -198,6 +225,32 @@ class PriorityAwareQueue:
         # Start worker threads
         self._start_workers()
     
+    def adjust_concurrency_based_on_resources(self, cpu_usage: float = None, memory_usage: float = None):
+        """
+        Adjust concurrency limits based on current resource usage.
+        
+        Args:
+            cpu_usage: CPU usage percentage (0.0 - 1.0)
+            memory_usage: Memory usage percentage (0.0 - 1.0)
+        """
+        if cpu_usage is not None:
+            self._resource_usage["cpu"] = cpu_usage
+        if memory_usage is not None:
+            self._resource_usage["memory"] = memory_usage
+        
+        # Calculate resource pressure (0.0 - 1.0, where 1.0 is maximum pressure)
+        resource_pressure = max(
+            self._resource_usage["cpu"],
+            self._resource_usage["memory"]
+        )
+        
+        # Adjust concurrency limits based on resource pressure
+        for priority in PriorityLevel:
+            base_limit = self.base_concurrency_limits[priority]
+            # Reduce concurrency as resource pressure increases
+            adjusted_limit = max(1, int(base_limit * (1.0 - resource_pressure * 0.5)))
+            self.concurrency_limits[priority] = adjusted_limit
+    
     def _generate_request_id(self) -> str:
         """Generate a unique request ID"""
         self._request_counter += 1
@@ -205,31 +258,39 @@ class PriorityAwareQueue:
     
     def _start_workers(self):
         """Start worker threads for processing queues with optimized concurrency"""
-        # Start workers for each priority level
-        for priority in PriorityLevel:
-            worker_count = self.concurrency_limits[priority]
-            for i in range(worker_count):
-                worker_task = asyncio.create_task(self._worker_loop(priority))
-                self._workers.append(worker_task)
+        # Start workers - using a single pool of workers for all priorities
+        # Total workers based on sum of concurrency limits
+        total_workers = sum(self.concurrency_limits.values())
+        for i in range(total_workers):
+            worker_task = asyncio.create_task(self._worker_loop())
+            self._workers.append(worker_task)
     
-    async def _worker_loop(self, priority: PriorityLevel):
-        """Worker loop for processing requests from a specific priority queue"""
+    async def _worker_loop(self):
+        """Worker loop for processing requests from the priority heap"""
         while self._running:
             try:
-                # Wait for a request from this priority queue
-                request = await self.queues[priority].get()
+                # Wait for a request from the priority heap
+                async with self._heap_lock:
+                    if not self._task_heap:
+                        # No tasks available, sleep briefly and continue
+                        await asyncio.sleep(0.01)
+                        continue
+                    
+                    # Get the highest priority task (lowest priority value)
+                    _, _, request = heapq.heappop(self._task_heap)
+                    
+                    # Update stats
+                    self.stats.decrement_queue_length(request.priority)
                 
                 # Process the request
                 await self._execute_queued_request(request)
                 
-                # Mark task as done
-                self.queues[priority].task_done()
-                
                 # Update stats
-                self.stats.decrement_queue_length(priority)
+                self.stats.increment_processed(request.priority)
             except Exception as e:
                 # Log error but continue processing
-                self.stats.add_error(priority, e, f"Worker loop error for {priority.value}")
+                if 'request' in locals():
+                    self.stats.add_error(request.priority, e, f"Worker loop error for {request.priority.value}")
                 continue
     
     async def submit(self, 
@@ -277,10 +338,17 @@ class PriorityAwareQueue:
             self._request_futures = {}
         self._request_futures[request_id] = future
         
-        # Try to add to queue, reject if full
+        # Try to add to heap, reject if full (simplified size check)
         try:
-            self.queues[priority].put_nowait(request)
-            self.stats.increment_queue_length(priority)
+            async with self._heap_lock:
+                # Simple size check to prevent unbounded growth
+                if len(self._task_heap) > 1000:  # Arbitrary limit
+                    raise asyncio.QueueFull()
+                
+                # Add to heap with priority ordering
+                priority_value = self._priority_values[priority]
+                heapq.heappush(self._task_heap, (priority_value, time.time(), request))
+                self.stats.increment_queue_length(priority)
         except asyncio.QueueFull:
             self.stats.increment_admission_rejection(priority)
             # Clean up future

@@ -153,41 +153,41 @@ svc = service("{name}") \\
     .build()
 
 @get("/users/{{user_id:int}}", cache=3600)
-@post("/users")
-@delete("/users/{{user_id:int}}", auth_role="admin")
-async def user_operations(user_id: Param[int] | None = None, data: Body[dict] | None = None):
-    # Handle different HTTP methods in one function
-    if request.method == "GET":
-        # Read user data with intent-aware behavior
-        user = await data_io.read(f"user:{{user_id}}")
-        if user:
-            return user
-        
-        # Mock user data
-        user = {{
-            "id": user_id,
-            "name": f"User {{user_id}}",
-            "email": f"user{{user_id}}@example.com"
-        }}
-        
-        # Write with intent (cacheable for 1 hour)
-        await data_io.write(f"user:{{user_id}}", user, ttl=3600)
+async def get_user(user_id: Param[int]):
+    # Read user data with intent-aware behavior
+    user = await data_io.read(f"user:{{user_id}}")
+    if user:
         return user
-    elif request.method == "POST":
-        user_id = data.get("id", 1)
-        user = {{
-            "id": user_id,
-            "name": data.get("name", "Unknown"),
-            "email": data.get("email", "unknown@example.com")
-        }}
-        
-        # Write user data with intent
-        await data_io.write(f"user:{{user_id}}", user, ttl=3600)
-        return {{"status": "created", "user": user}}
-    elif request.method == "DELETE":
-        # Delete user data
-        await data_io.delete(f"user:{{user_id}}")
-        return {{"status": "deleted", "user_id": user_id}}
+    
+    # Mock user data
+    user = {{
+        "id": user_id,
+        "name": f"User {{user_id}}",
+        "email": f"user{{user_id}}@example.com"
+    }}
+    
+    # Write with intent (cacheable for 1 hour)
+    await data_io.write(f"user:{{user_id}}", user, ttl=3600)
+    return user
+
+@post("/users")
+async def create_user(data: Body[dict]):
+    user_id = data.get("id", 1)
+    user = {{
+        "id": user_id,
+        "name": data.get("name", "Unknown"),
+        "email": data.get("email", "unknown@example.com")
+    }}
+    
+    # Write user data with intent
+    await data_io.write(f"user:{{user_id}}", user, ttl=3600)
+    return {{"status": "created", "user": user}}
+
+@delete("/users/{{user_id:int}}", auth_role="admin")
+async def delete_user(user_id: Param[int]):
+    # Delete user data
+    await data_io.delete(f"user:{{user_id}}")
+    return {{"status": "deleted", "user_id": user_id}}
 """
 
 # Class-based syntax (opt-in, grouped, NestJS-inspired)

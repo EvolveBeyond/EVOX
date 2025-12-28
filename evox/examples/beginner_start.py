@@ -10,25 +10,90 @@ to demonstrate EVOX's flexibility from day one.
 """
 
 from evox import service, get, post, Body, Param
-from typing import Dict
+from typing import Dict, Any
+from pydantic import BaseModel, Field
+from typing import Annotated
+from evox.core.intents import Intent
 
 
-# Functional Service Example (5 lines)
-# ===================================
-# The simplest possible EVOX service
+# Functional Service Example (Pydantic-Enhanced)
+# ===========================================
+# The simplest possible EVOX service with intent-aware Pydantic models
 @get("/hello/{name}")
 async def hello(name: str = Param(str)) -> Dict[str, str]:
     return {"message": f"Hello, {name}! Welcome to EVOX"}
 
+
+# Intent-Aware Echo Model
+class EchoRequest(BaseModel):
+    """
+    Intent-Aware Echo Request Model
+    
+    Demonstrates how field-level intents influence EVOX behavior:
+    - message field marked as EPHEMERAL gets optimized caching
+    """
+    message: str = Field(
+        ..., 
+        description="Message to echo back",
+        json_schema_extra={"intent": Intent.EPHEMERAL}
+    )
+    metadata: Dict[str, Any] | None = Field(
+        None,
+        description="Optional metadata",
+        json_schema_extra={"intent": Intent.LAZY}
+    )
+
+
 @post("/echo")
-async def echo(data: Dict = Body(dict)) -> Dict:
-    return {"received": data, "message": "Echoed back successfully"}
+async def echo(request: EchoRequest = Body(...)) -> Dict[str, Any]:
+    """
+    Intent-aware echo endpoint.
+    
+    EVOX automatically processes this request based on the model's declared intents.
+    """
+    return {
+        "received": request.message, 
+        "metadata": request.metadata,
+        "message": "Echoed back successfully",
+        "processing": "intent-aware"
+    }
 
 
-# Class-Based Service Example (10 lines)
-# =====================================
-# A more structured approach for when you need organization
+# Class-Based Service Example (Intent-Aware)
+# ==========================================
+# A more structured approach with Pydantic models and intent awareness
 from evox import Controller, GET, POST
+
+
+class UserCreateRequest(BaseModel):
+    """
+    Intent-Aware User Creation Request Model
+    
+    Demonstrates how field-level intents influence EVOX behavior:
+    - email marked as SENSITIVE gets encrypted storage
+    - name marked as CRITICAL gets strong consistency
+    """
+    name: str = Field(
+        ..., 
+        min_length=1, 
+        max_length=100, 
+        description="User's full name",
+        json_schema_extra={"intent": Intent.CRITICAL}
+    )
+    email: str = Field(
+        ..., 
+        pattern=r'^[\\w\\.-]+@[\\w\\.-]+\\.\\w+$', 
+        description="Sensitive email address (encrypted storage)",
+        json_schema_extra={"intent": Intent.SENSITIVE}
+    )
+    age: int | None = Field(
+        None, 
+        ge=0, 
+        le=150, 
+        description="Age in years",
+        json_schema_extra={"intent": Intent.EPHEMERAL}
+    )
+
 
 @Controller("/api/v1/users", tags=["users"])
 class UserService:
@@ -37,8 +102,8 @@ class UserService:
         return {"id": user_id, "name": f"User {user_id}", "service": "class-based"}
     
     @POST("/")
-    async def create_user(self, user_data: Dict = Body(dict)) -> Dict:
-        return {"status": "created", "user": user_data, "service": "class-based"}
+    async def create_user(self, user_data: UserCreateRequest = Body(...)) -> Dict:
+        return {"status": "created", "user": user_data.model_dump(), "service": "class-based"}
 
 
 # Create and run the service

@@ -18,26 +18,71 @@ from evox import service, get, post, Body, Query
 from evox.core.inject import HealthAwareInject
 from evox.core.intelligence import SystemMonitor
 from evox.core.queue import PriorityAwareQueue
+from evox.core.intents import Intent as DataIntent
 from ..gateway.intelligence_engine import intelligence_engine
 
 
 class RequestData(BaseModel):
-    """Model for incoming request data."""
-    path: str = Field(..., description="Request path")
-    method: str = Field(..., description="HTTP method")
-    user_role: str = Field(default="user", description="User role")
-    is_urgent: bool = Field(default=False, description="Is this an urgent request?")
-    is_background: bool = Field(default=False, description="Is this a background request?")
-    priority: str | None = Field(None, description="Explicit priority override")
+    """Intent-aware model for incoming request data."""
+    path: str = Field(
+        ..., 
+        description="Request path",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    method: str = Field(
+        ..., 
+        description="HTTP method",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    user_role: str = Field(
+        default="user", 
+        description="User role",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    is_urgent: bool = Field(
+        default=False, 
+        description="Is this an urgent request?",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    is_background: bool = Field(
+        default=False, 
+        description="Is this a background request?",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    priority: str | None = Field(
+        None, 
+        description="Explicit priority override",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
 
 
 class GatewayResponse(BaseModel):
-    """Model for gateway responses."""
-    status: str
-    priority: str | None = None
-    processed_immediately: bool | None = None
-    response_time: float | None = None
-    message: str | None = None
+    """Intent-aware model for gateway responses."""
+    status: str = Field(
+        ..., 
+        description="Response status",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    priority: str | None = Field(
+        None,
+        description="Assigned priority",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    processed_immediately: bool | None = Field(
+        None,
+        description="Whether request was processed immediately",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    response_time: float | None = Field(
+        None,
+        description="Time taken to process request",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
+    message: str | None = Field(
+        None,
+        description="Additional message",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
 
 
 class SmartGatewayService:

@@ -182,6 +182,67 @@ The framework automatically adapts based on your declared intentions:
 - Context-aware processing
 - Resource-aware concurrency adjustment
 
+## 🧠 Intelligence at the Schema Level
+
+In EVOX, your **Data Model is your Infrastructure Policy**. By defining a Pydantic field with intent metadata, you are telling EVOX how to treat that data (e.g., "This field is `SENSITIVE`, so encrypt it and mask it in logs").
+
+### The Power of Intent-Aware Pydantic Models
+
+Define your data intents directly in your Pydantic models, and EVOX automatically applies the appropriate handling:
+
+```python
+from pydantic import BaseModel, Field
+from evox.core.intents import Intent
+
+class ProfileUpdate(BaseModel):
+    name: str = Field(
+        ..., 
+        description="User's name", 
+        json_schema_extra={"intent": Intent.CRITICAL}
+    )
+    email: str = Field(
+        ..., 
+        description="Email address", 
+        json_schema_extra={"intent": Intent.SENSITIVE}
+    )
+    age: int | None = Field(
+        None, 
+        description="Age in years", 
+        json_schema_extra={"intent": Intent.EPHEMERAL}
+    )
+```
+
+Based on these intents, EVOX automatically:
+- Treats `name` as critical data that must be saved at all costs
+- Encrypts and masks `email` as sensitive data
+- Applies optimized caching strategies for `age` as ephemeral data
+
+### Before vs After Comparison
+
+**Before (Standard FastAPI style):**
+```python
+# Standard approach - no intent awareness
+@post("/users")
+async def create_user(data: Dict = Body(dict)) -> Dict:
+    # Manual handling of different data types
+    if "email" in data:
+        # Manual encryption, logging, etc.
+        pass
+    return {"status": "created"}
+```
+
+**After (EVOX Intent-Aware style):**
+```python
+# Intent-aware approach - automatic handling
+from evox import service, post, Body
+
+@post("/users")
+async def create_user(request: ProfileUpdate = Body(...)) -> Dict:
+    # EVOX automatically handles intents based on model definition
+    # No manual encryption, logging, or caching logic needed
+    return {"status": "created"}
+```
+
 ## ⚡ Intelligent Priority Management
 
 Requests are automatically prioritized based on multiple factors:

@@ -28,23 +28,59 @@ class UserCreateRequest(BaseModel):
     This model demonstrates how data intents influence behavior:
     - email marked as SENSITIVE gets encrypted storage
     - name marked as CRITICAL gets strong consistency
+    - age marked as EPHEMERAL gets optimized caching
     """
-    name: str = Field(..., min_length=1, max_length=100, description="User's full name")
+    name: str = Field(
+        ..., 
+        min_length=1, 
+        max_length=100, 
+        description="User's full name",
+        json_schema_extra={"intent": DataIntent.CRITICAL}
+    )
     email: str = Field(
         ..., 
-        pattern=r'^[\w\.-]+@[\w\.-]+\.\w+$', 
-        description="Sensitive email address (encrypted storage)"
+        pattern=r'^[\w\.-]+@[\w\.-]+\.+\w+$', 
+        description="Sensitive email address (encrypted storage)",
+        json_schema_extra={"intent": DataIntent.SENSITIVE}
     )
-    age: int | None = Field(None, ge=0, le=150, description="Age in years")
+    age: int | None = Field(
+        None, 
+        ge=0, 
+        le=150, 
+        description="Age in years",
+        json_schema_extra={"intent": DataIntent.EPHEMERAL}
+    )
 
 
 class UserResponse(BaseModel):
-    """Response model for user data."""
-    id: str
-    name: str
-    email: str
-    age: int | None = None
-    created_at: str
+    """Intent-aware response model for user data."""
+    id: str = Field(
+        ..., 
+        description="Unique user identifier",
+        json_schema_extra={"intent": DataIntent.CRITICAL}
+    )
+    name: str = Field(
+        ..., 
+        description="User's full name",
+        json_schema_extra={"intent": DataIntent.CRITICAL}
+    )
+    email: str = Field(
+        ..., 
+        description="User's email address",
+        json_schema_extra={"intent": DataIntent.SENSITIVE}
+    )
+    age: int | None = Field(
+        None, 
+        ge=0, 
+        le=150, 
+        description="Age in years",
+        json_schema_extra={"intent": DataIntent.EPHEMERAL}
+    )
+    created_at: str = Field(
+        ..., 
+        description="User creation timestamp",
+        json_schema_extra={"intent": DataIntent.LAZY}
+    )
 
 
 # Service class with health-aware injection

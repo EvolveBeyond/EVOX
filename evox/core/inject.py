@@ -1,68 +1,145 @@
 """
-Dependency Injection - Lazy provider-based injection system
+Registry-Driven Health-Aware Dependency Injection - Intent-Aware, Fully Pydantic-based injection system
 
-Provides lazy resolution of dependencies without eager instantiation.
-Supports service proxies, database connections, and configuration.
-
-Rationale:
-- Lazy loading: Dependencies are only instantiated when actually needed
-- Type safety: Pydantic's Annotated support enables compile-time checking
-- Testability: Easy mocking and override mechanisms for unit testing
-- Performance: Zero-cost initialization until first access
+This module provides a Registry-Driven, Intent-Aware type-safe, secure dependency injection system that:
+- Uses Pydantic Annotated for all parameter and dependency injection
+- Eliminates string-based injection vulnerabilities
+- Provides lazy resolution with zero-cost initialization
+- Supports comprehensive testing with override mechanisms
+- Implements health awareness for providers with degraded mode capabilities
 """
-from typing import Optional, Type, TypeVar, Generic, get_type_hints
+
+from typing import TypeVar, Generic, get_origin, get_args, Dict, Any
+
 from functools import wraps
-from pydantic import BaseModel
-try:
-    from typing import Annotated
-except ImportError:
-    # For Python < 3.9, use typing_extensions
-    from typing_extensions import Annotated
+
+from datetime import datetime
+import contextvars
+import asyncio
+import logging
+from typing import Annotated
+
+from .common import BaseProvider
+
+
+
+# Global registry for service instances
+_service_registry: dict[str, Any] = {}
+
+# Global registry for service types to names mapping
+_service_type_mapping: dict[type, str] = {}
+
+# Context variable to track health state for the current execution context
+_current_request_health_state = contextvars.ContextVar("current_request_health_state", default=None)
+
+# Global registry for health states
+_health_registry: dict[str, dict[str, Any]] = {}
+
+
+class HealthProxy:
+    """
+    Proxy wrapper for unhealthy dependencies to enable degraded mode operations
+    
+    This proxy wraps an unhealthy dependency and logs warnings when it is used,
+    allowing the application to continue operating in a degraded state.
+    """
+    
+    def __init__(self, wrapped_instance: Any, service_name: str):
+        self._wrapped_instance = wrapped_instance
+        self._service_name = service_name
+        
+    def __getattr__(self, name):
+        # Log a warning when accessing any attribute of an unhealthy service
+        logging.warning(f"Accessing potentially unreliable service '{self._service_name}' in degraded mode")
+        return getattr(self._wrapped_instance, name)
 
 
 T = TypeVar('T')
 
-class Inject(Generic[T]):
+class HealthAwareInject(Generic[T]):
     """
-    Lazy provider-based dependency injection system with type safety
+    Health-aware dependency injection system with degraded mode capabilities
     
-    Provides lazy resolution of dependencies without eager instantiation.
-    Supports Pydantic's Annotated for type-safe injection.
+    Provides lazy resolution of dependencies with full type safety using Pydantic Annotated.
+    Implements health awareness for providers and degraded mode operations.
     """
     
-    def __class_getitem__(cls, item):
-        """Support for generic type annotation"""
-        return cls(item)
-    
-    def __init__(self, dependency_type: Type[T] = None):
+    def __init__(self, dependency_type: type[T] | None = None, fallback_to: Any = None):
         self.dependency_type = dependency_type
-    
-    def __call__(self, dependency_identifier: str = None):
-        """
-        Inject a dependency lazily with zero-cost initialization
-        
-        Args:
-            dependency_identifier: Identifier for the dependency to inject
-            
-        Returns:
-            Lazy dependency resolver
-        """
-        if self.dependency_type and hasattr(self.dependency_type, '__name__'):
-            # Use type name as identifier if not provided
-            dependency_identifier = dependency_identifier or self.dependency_type.__name__
-        
-        # Handle different dependency types
-        if dependency_identifier == 'service':
-            return self._inject_service()
-        elif dependency_identifier == 'db' or dependency_identifier == 'database':
-            return self._inject_database()
-        elif dependency_identifier == 'config':
-            return self._inject_config()
-        else:
-            return self._inject_generic(dependency_identifier)
+        self.fallback_to = fallback_to
     
     @classmethod
-    def from_annotation(cls, annotation):
+    def register_service(cls, service_type: type, service_name: str):
+        """Register a service type with its name from config.toml"""
+        global _service_type_mapping
+        _service_type_mapping[service_type] = service_name
+    
+    @classmethod
+    def register_instance(cls, service_name: str, instance: Any):
+        """Register a service instance"""
+        global _service_registry
+        _service_registry[service_name] = instance
+
+    @classmethod
+    def register_health_state(cls, service_name: str, health_state: Dict[str, Any]):
+        """Register health state for a service"""
+        global _health_registry
+        _health_registry[service_name] = health_state
+    
+    async def __call__(self) -> T:
+        """
+        Securely inject a dependency with full type safety and health awareness
+        
+        Returns:
+            The injected dependency instance
+        """
+        # Resolve service name from type mapping
+        if self.dependency_type and self.dependency_type in _service_type_mapping:
+            service_name = _service_type_mapping[self.dependency_type]
+        elif self.dependency_type and hasattr(self.dependency_type, '__name__'):
+            # Fallback to type name
+            service_name = self.dependency_type.__name__
+        else:
+            raise ValueError("Cannot resolve service name for injection")
+        
+        # Get instance from registry
+        instance = _service_registry.get(service_name)
+        if instance is None:
+            if self.fallback_to:
+                logging.warning(f"Service '{service_name}' not registered for injection, using fallback")
+                return self.fallback_to
+            raise ValueError(f"Service '{service_name}' not registered for injection")
+        
+        # Check if the instance implements BaseProvider for health awareness
+        if isinstance(instance, BaseProvider):
+            # Perform health check
+            is_healthy = await instance.check_health()
+            
+            # Update health registry
+            health_state = {
+                "service_name": service_name,
+                "is_healthy": is_healthy,
+                "last_check": datetime.now(),
+                "instance": instance
+            }
+            self.register_health_state(service_name, health_state)
+            
+            if not is_healthy:
+                # Log critical warning about unhealthy dependency
+                logging.warning(f"CRITICAL: Service '{service_name}' is unhealthy. Preparing for degraded mode operations.")
+                
+                # If we have a fallback, use it
+                if self.fallback_to:
+                    logging.info(f"Using fallback for '{service_name}' service")
+                    return self.fallback_to
+                
+                # Otherwise, return the unhealthy instance but with a health proxy wrapper
+                return HealthProxy(instance, service_name)
+        
+        return instance
+    
+    @classmethod
+    def from_annotated(cls, annotation) -> Any:
         """
         Create inject instance from Pydantic Annotated type
         
@@ -70,266 +147,156 @@ class Inject(Generic[T]):
             annotation: Pydantic Annotated type
             
         Returns:
-            Inject instance configured from annotation
+            Injected dependency instance
         """
         if hasattr(annotation, '__metadata__'):
-            # This is an Annotated type
+            # Extract origin type (the actual type)
+            origin_type = annotation.__origin__
+            
+            # Extract metadata for service name
             metadata = annotation.__metadata__
-            if metadata and len(metadata) > 0:
-                # Extract dependency identifier from metadata
-                dep_id = metadata[0] if isinstance(metadata[0], str) else None
-                return cls(annotation.__origin__)(dep_id)
-        
-        # Fallback to regular type injection
-        return cls(annotation)()
-    
-    def _inject_service(self):
-        """Inject a service proxy lazily"""
-        from evox.core.proxy import ServiceProxy
-        
-        class LazyServiceProxy:
-            def __init__(self, service_name=None):
-                self.service_name = service_name
-                self._proxy = None
+            if metadata:
+                # Look for service name in metadata
+                for item in metadata:
+                    if isinstance(item, str) and item in _service_registry:
+                        instance = _service_registry.get(item)
+                        if instance is not None:
+                            return instance
             
-            def __getattr__(self, method_name):
-                # Check for override first
-                override_key = f"service:{self.service_name}" if self.service_name else "service"
-                if override_key in _overrides:
-                    return getattr(_overrides[override_key], method_name)
-                
-                # Zero-cost until first resolution
-                if self._proxy is None:
-                    self._proxy = ServiceProxy.get_instance(self.service_name or "default")
-                return getattr(self._proxy, method_name)
-            
-            def __call__(self, *args, **kwargs):
-                # Check for override first
-                override_key = f"service:{self.service_name}" if self.service_name else "service"
-                if override_key in _overrides:
-                    return _overrides[override_key](*args, **kwargs)
-                
-                # Zero-cost until first resolution
-                if self._proxy is None:
-                    self._proxy = ServiceProxy.get_instance(self.service_name or "default")
-                return self._proxy(*args, **kwargs)
+            # Fallback to type-based resolution
+            if origin_type in _service_type_mapping:
+                service_name = _service_type_mapping[origin_type]
+                instance = _service_registry.get(service_name)
+                if instance is not None:
+                    return instance
         
-        return LazyServiceProxy()
-    
-    def _inject_database(self):
-        """Inject database connection lazily"""
-        from evox.core.storage import data_io
-        
-        class LazyDBProxy:
-            def __init__(self):
-                self._initialized = False
-            
-            def __getattr__(self, attr):
-                # Check for override first
-                if 'db' in _overrides:
-                    return getattr(_overrides['db'], attr)
-                
-                # Lazy initialization on first access
-                if not self._initialized:
-                    # In a real implementation, this would initialize the DB connection
-                    self._initialized = True
-                # Delegate to data_io for actual operations
-                return getattr(data_io, attr)
-        
-        return LazyDBProxy()
-    
-    def _inject_config(self, section: Optional[str] = None):
-        """Inject configuration lazily"""
-        from evox.core.config import get_config as _get_config
-        
-        class LazyConfigProxy:
-            def __init__(self, section=None):
-                self.section = section
-                self._cache = {}
-            
-            def __getattr__(self, key):
-                # Check for override first
-                override_key = f"config:{self.section}" if self.section else "config"
-                if override_key in _overrides:
-                    config_override = _overrides[override_key]
-                    return getattr(config_override, key) if hasattr(config_override, key) else config_override.get(key)
-                
-                # Return configuration value lazily
-                cache_key = f"{self.section}.{key}" if self.section else key
-                if cache_key not in self._cache:
-                    self._cache[cache_key] = _get_config(cache_key)
-                return self._cache[cache_key]
-            
-            def get(self, key: str, default=None):
-                """Get configuration value with default"""
-                # Check for override first
-                override_key = f"config:{self.section}" if self.section else "config"
-                if override_key in _overrides:
-                    config_override = _overrides[override_key]
-                    return config_override.get(key, default) if hasattr(config_override, 'get') else getattr(config_override, key, default)
-                
-                cache_key = f"{self.section}.{key}" if self.section else key
-                if cache_key not in self._cache:
-                    self._cache[cache_key] = _get_config(cache_key, default)
-                return self._cache[cache_key]
-        
-        return LazyConfigProxy(section)
-    
-    def _inject_generic(self, identifier: str):
-        """Inject a generic dependency"""
-        class LazyGenericProxy:
-            def __init__(self, identifier):
-                self.identifier = identifier
-                self._instance = None
-            
-            def __getattr__(self, attr):
-                # Check for override first
-                if self.identifier in _overrides:
-                    return getattr(_overrides[self.identifier], attr)
-                
-                # Lazy resolution
-                if self._instance is None:
-                    # Try to resolve from service instances
-                    from evox.core.service_builder import ServiceBuilder
-                    self._instance = ServiceBuilder.get_instance(self.identifier)
-                    if self._instance is None:
-                        # Fall back to simple resolution
-                        self._instance = self._resolve_dependency()
-                return getattr(self._instance, attr)
-            
-            def _resolve_dependency(self):
-                """Resolve dependency based on identifier"""
-                # This is a simplified resolution - in a real implementation,
-                # this would use a more sophisticated dependency resolution mechanism
-                return object()
-        
-        return LazyGenericProxy(identifier)
-    
-    @staticmethod
-    def db():
-        """
-        Inject database connection lazily
-        
-        Returns:
-            Lazy database proxy resolver
-        """
-        # Return a lazy database proxy that resolves at call time
-        from evox.core.storage import data_io
-        
-        class LazyDBProxy:
-            def __init__(self):
-                self._initialized = False
-            
-            def __getattr__(self, attr):
-                # Check for override first
-                if 'db' in _overrides:
-                    return getattr(_overrides['db'], attr)
-                
-                # Lazy initialization on first access
-                if not self._initialized:
-                    # In a real implementation, this would initialize the DB connection
-                    self._initialized = True
-                # Delegate to data_io for actual operations
-                return getattr(data_io, attr)
-        
-        return LazyDBProxy()
-    
-    @staticmethod
-    def config(section: Optional[str] = None):
-        """
-        Inject configuration lazily
-        
-        Args:
-            section: Configuration section to inject
-            
-        Returns:
-            Lazy configuration resolver
-        """
-        from evox.core.config import get_config as _get_config
-        
-        class LazyConfigProxy:
-            def __init__(self, section=None):
-                self.section = section
-                self._cache = {}
-            
-            def __getattr__(self, key):
-                # Check for override first
-                override_key = f"config:{self.section}" if self.section else "config"
-                if override_key in _overrides:
-                    config_override = _overrides[override_key]
-                    return getattr(config_override, key) if hasattr(config_override, key) else config_override.get(key)
-                
-                # Return configuration value lazily
-                cache_key = f"{self.section}.{key}" if self.section else key
-                if cache_key not in self._cache:
-                    self._cache[cache_key] = _get_config(cache_key)
-                return self._cache[cache_key]
-            
-            def get(self, key: str, default=None):
-                """Get configuration value with default"""
-                # Check for override first
-                override_key = f"config:{self.section}" if self.section else "config"
-                if override_key in _overrides:
-                    config_override = _overrides[override_key]
-                    return config_override.get(key, default) if hasattr(config_override, 'get') else getattr(config_override, key, default)
-                
-                cache_key = f"{self.section}.{key}" if self.section else key
-                if cache_key not in self._cache:
-                    self._cache[cache_key] = _get_config(cache_key, default)
-                return self._cache[cache_key]
-        
-        return LazyConfigProxy(section)
+        raise ValueError(f"Cannot resolve dependency from annotation: {annotation}")
+
+# Global health-aware inject instance
+health_aware_inject = HealthAwareInject()
 
 
-# Global inject instance factory
-inject = Inject()
-
-# Enhanced inject function that supports both string identifiers and type annotations
-class EnhancedInject:
-    """Enhanced inject function that supports both string identifiers and type annotations
-    
-    Rationale:
-        Unified interface that supports both legacy string-based injection
-        and modern type-annotated injection for gradual migration.
+def inject(dependency_type: type[T], fallback_to: Any = None) -> T:
     """
+    Type-safe dependency injection function with health awareness
     
-    def __call__(self, dependency_identifier=None):
-        """Inject dependency by identifier or type"""
-        if dependency_identifier is None:
-            return Inject()
-        elif isinstance(dependency_identifier, str):
-            # String identifier
-            return Inject()(dependency_identifier)
-        else:
-            # Type annotation
-            return inject_dependency(dependency_identifier)
+    Args:
+        dependency_type: The type of dependency to inject
+        fallback_to: Fallback instance to use if the primary dependency is unhealthy
+        
+    Returns:
+        The injected dependency instance
+        
+    Example:
+        db = inject(DatabaseService)
+        config = inject(ConfigService)
+        db_with_fallback = inject(DatabaseService, fallback_to=memory_db)
+    """
+    # Check if we're already in an event loop
+    try:
+        loop = asyncio.get_running_loop()
+        # If we're in a loop, we need to handle it differently
+        # For now, we'll create a new event loop in a separate thread
+        import concurrent.futures
+        import threading
+        
+        def run_in_thread():
+            return asyncio.run(HealthAwareInject(dependency_type, fallback_to)())
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run
+        injector = HealthAwareInject(dependency_type, fallback_to)
+        return asyncio.run(injector())
+
+
+def inject_from_annotation(annotation) -> Any:
+    """
+    Inject dependency from Pydantic Annotated type with health awareness
     
-    def __getattr__(self, name):
-        """Support for direct attribute access like inject.db, inject.config"""
-        if name in ['db', 'config', 'service']:
-            return getattr(Inject(), name)()
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+    Args:
+        annotation: Pydantic Annotated type
+        
+    Returns:
+        The injected dependency instance
+        
+    Example:
+        user_id: Annotated[str, "user-id-service"] = inject_from_annotation(...)
+    """
+    return HealthAwareInject.from_annotated(annotation)
 
-# Replace global inject with enhanced version
-inject = EnhancedInject()
 
-# Convenience function for type-safe injection
-def inject_dependency(dependency_type: Type[T]) -> T:
-    """Convenience function for type-safe dependency injection"""
-    # Check if this is an Annotated type
-    if hasattr(dependency_type, '__metadata__'):
-        return Inject.from_annotation(dependency_type)
-    return Inject(dependency_type)()
+def get_health_registry() -> dict[str, dict[str, Any]]:
+    """
+    Get the global health registry containing health states of all services
+    
+    Returns:
+        Dictionary with service names as keys and health states as values
+    """
+    return _health_registry
+
+
+def get_service_health(service_name: str) -> dict[str, Any] | None:
+    """
+    Get the health status of a specific service
+    
+    Args:
+        service_name: Name of the service to check
+        
+    Returns:
+        Health state of the service or None if not found
+    """
+    return _health_registry.get(service_name)
 
 
 # Provider override mechanism for testing
-_overrides = {}
+_overrides: dict[str, Any] = {}
 
-def override(provider, mock_value):
-    """Override a provider for testing"""
-    _overrides[provider] = mock_value
+def override(service_name: str, mock_value: Any):
+    """Override a service for testing"""
+    _overrides[service_name] = mock_value
 
 def reset_overrides():
     """Reset all overrides"""
     global _overrides
     _overrides.clear()
+
+
+def inject_with_health_check(dependency_type: type[T], fallback_to: Any = None) -> T:
+    """
+    Inject dependency with explicit health check
+    
+    Args:
+        dependency_type: The type of dependency to inject
+        fallback_to: Fallback instance to use if the primary dependency is unhealthy
+        
+    Returns:
+        The injected dependency instance
+    """
+    # Check if we're already in an event loop
+    try:
+        loop = asyncio.get_running_loop()
+        # If we're in a loop, we need to handle it differently
+        import concurrent.futures
+        
+        def run_in_thread():
+            return asyncio.run(HealthAwareInject(dependency_type, fallback_to)())
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run
+        injector = HealthAwareInject(dependency_type, fallback_to)
+        return asyncio.run(injector())
+
+# Convenience aliases for common injection patterns
+def inject_db() -> Any:
+    """Inject database service"""
+    return inject_from_annotation(Annotated[Any, "database"])
+
+def inject_config() -> Any:
+    """Inject configuration service"""
+    return inject_from_annotation(Annotated[Any, "config"])

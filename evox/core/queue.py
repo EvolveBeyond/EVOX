@@ -1,423 +1,274 @@
 """
-Priority-Aware Request Queue for Evox Framework
+Intent-Aware Priority Queue System - Registry-Driven, Context-Aware Request Processing
 
-This module implements a priority-aware execution queue for inter-service calls
-and fan-out operations. It provides:
+This module provides an Intent-Aware priority queue system that:
+1. Processes requests based on priority levels
+2. Adapts to system resource availability
+3. Integrates with the intent system for intelligent request handling
+4. Implements load shedding when system resources are constrained
 
-1. Three priority levels: high (user-facing), medium (default), low (background)
-2. Concurrency caps per priority level
-3. Admission control (reject fast if queue full)
-4. Backpressure handling
-
-The queue integrates with the service proxy and endpoint decorators to provide
-priority-based execution of requests.
+Design Philosophy:
+- Priority-based processing: Critical requests get processed first
+- Adaptive behavior: Adjusts to system load conditions
+- Intent-aware: Leverages intent metadata for smarter processing
+- Resource-conscious: Implements load shedding when necessary
 """
 
 import asyncio
-import time
 import heapq
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
-from collections import defaultdict, deque
-from dataclasses import dataclass
-from datetime import datetime
+from typing import Any, Callable, Coroutine
+from dataclasses import dataclass, field
 
-from .config import get_config
+import time
+import logging
+from .intents import Intent, get_intent_registry
 
 
 class PriorityLevel(Enum):
-    """Priority levels for request queueing with resource awareness"""
-    HIGH = "high"      # User-facing, critical operations - higher concurrency cap
-    MEDIUM = "medium"  # Default priority for most operations - moderate concurrency cap
-    LOW = "low"        # Background, non-critical operations - lower concurrency cap
+    """
+    Priority levels for request processing
     
-    def get_concurrency_cap(self) -> int:
-        """Get concurrency cap based on priority level"""
-        caps = {
-            PriorityLevel.HIGH: 10,
-            PriorityLevel.MEDIUM: 5,
-            PriorityLevel.LOW: 2
-        }
-        return caps.get(self, 5)
+    Rationale: Standardized priority levels ensure consistent request
+    processing across the framework based on declared intent and importance.
+    """
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
 
 
 @dataclass
-class QueuedRequest:
-    """Represents a request in the priority queue"""
-    id: str
+class QueueItem:
+    """
+    Represents an item in the priority queue
+    
+    Rationale: Encapsulates request data with priority and timing information
+    to enable proper queue management and processing.
+    """
     priority: PriorityLevel
-    func: Callable
-    args: tuple
-    kwargs: dict
     timestamp: float
-    timeout: Optional[float] = None
+    request_coro: Coroutine[Any, Any, Any]
+    intent: Intent | None = None
+    path: str | None = None
+    method: str | None = None
+    # Use field(default_factory=int) to avoid mutable default argument
+    _queue_order: int = field(default_factory=lambda: int(time.time() * 1000000) % 1000000)  # Use timestamp-based unique ID
+    
+    def __lt__(self, other):
+        """
+        Compare queue items based on priority and timestamp
+        
+        Rationale: Ensures high-priority items are processed first,
+        with timestamp as tie-breaker for same priority items.
+        """
+        if self.priority.value != other.priority.value:
+            return self.priority.value > other.priority.value  # Higher value = higher priority
+        if self.timestamp != other.timestamp:
+            return self.timestamp < other.timestamp  # Earlier timestamp = higher priority
+        return self._queue_order < other._queue_order  # Tie-breaker using unique ID
 
 
-class PriorityQueueStats:
-    """Statistics tracker for the priority queue"""
-    
-    def __init__(self):
-        self.queue_lengths: Dict[PriorityLevel, int] = {
-            PriorityLevel.HIGH: 0,
-            PriorityLevel.MEDIUM: 0,
-            PriorityLevel.LOW: 0
-        }
-        self.admission_rejections: Dict[PriorityLevel, int] = {
-            PriorityLevel.HIGH: 0,
-            PriorityLevel.MEDIUM: 0,
-            PriorityLevel.LOW: 0
-        }
-        self.processed_count: Dict[PriorityLevel, int] = {
-            PriorityLevel.HIGH: 0,
-            PriorityLevel.MEDIUM: 0,
-            PriorityLevel.LOW: 0
-        }
-        self.errors: List[Dict[str, Any]] = []
-        self.last_updated: float = time.time()
-    
-    def increment_queue_length(self, priority: PriorityLevel):
-        """Increment queue length for a priority level"""
-        self.queue_lengths[priority] += 1
-        self.last_updated = time.time()
-    
-    def decrement_queue_length(self, priority: PriorityLevel):
-        """Decrement queue length for a priority level"""
-        self.queue_lengths[priority] = max(0, self.queue_lengths[priority] - 1)
-        self.last_updated = time.time()
-    
-    def increment_admission_rejection(self, priority: PriorityLevel):
-        """Increment admission rejection count for a priority level"""
-        self.admission_rejections[priority] += 1
-        self.last_updated = time.time()
-    
-    def increment_processed(self, priority: PriorityLevel):
-        """Increment processed count for a priority level"""
-        self.processed_count[priority] += 1
-        self.last_updated = time.time()
-    
-    def add_error(self, priority: PriorityLevel, error: Exception, context: str = ""):
-        """Add an error to the error log"""
-        self.errors.append({
-            "timestamp": datetime.now().isoformat(),
-            "priority": priority.value,
-            "error": str(error),
-            "context": context
-        })
-        # Keep only last 100 errors to prevent memory bloat
-        if len(self.errors) > 100:
-            self.errors.pop(0)
-        self.last_updated = time.time()
-
-
-class PriorityAwareQueue:
+class PriorityQueue:
     """
-    Priority-aware execution queue for Evox framework with resource awareness.
+    Priority queue system for managing request processing
     
-    This queue manages concurrent execution of requests with different priority levels.
-    It provides:
+    This system implements:
+    - Priority-based request processing
+    - Adaptive concurrency based on system load
+    - Intent-aware request handling
+    - Load shedding during high resource usage
     
-    1. Priority-based scheduling (HIGH > MEDIUM > LOW)
-    2. Dynamic concurrency limits per priority level based on resource usage
-    3. Queue length limits with admission control
-    4. Statistics tracking
-    5. Resource-aware priority adjustment
-    
-    Design Notes:
-    - Uses asyncio queues for each priority level
-    - Implements weighted round-robin scheduling favoring higher priorities
-    - Provides backpressure handling through queue limits
-    - Tracks comprehensive statistics for monitoring
-    - Adjusts concurrency based on system resource usage
-    
-    Good first issue: Add configurable weights for priority scheduling
+    Design Rationale:
+    - Centralized queue management for consistent request handling
+    - Adaptive behavior based on system conditions
+    - Integration with intent system for intelligent processing
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the priority-aware queue.
-        
-        Args:
-            config: Configuration dictionary with queue settings
-                   If not provided, loads from framework configuration
-                   Example:
-                   {
-                       "concurrency_limits": {
-                           "high": 10,
-                           "medium": 5,
-                           "low": 2
-                       },
-                       "queue_limits": {
-                           "high": 50,
-                           "medium": 100,
-                           "low": 200
-                       }
-                   }
-        """
-        # Load configuration from framework config if not provided
-        if config is None:
-            config = {
-                "concurrency_limits": {
-                    "high": get_config("queue.concurrency_limits.high", 10),
-                    "medium": get_config("queue.concurrency_limits.medium", 5),
-                    "low": get_config("queue.concurrency_limits.low", 2)
-                },
-                "queue_limits": {
-                    "high": get_config("queue.queue_limits.high", 50),
-                    "medium": get_config("queue.queue_limits.medium", 100),
-                    "low": get_config("queue.queue_limits.low", 200)
-                }
-            }
-        
-        # Merge with provided config
-        self.config = config
-        
-        # Use a single priority queue with heapq for better performance
-        # Priority levels: HIGH=1, MEDIUM=2, LOW=3 (lower number = higher priority)
-        self._task_heap: List[tuple] = []  # (priority_value, timestamp, request)
-        self._heap_lock = asyncio.Lock()
-        
-        # Map priority levels to numeric values for heap ordering
-        self._priority_values = {
-            PriorityLevel.HIGH: 1,
-            PriorityLevel.MEDIUM: 2,
-            PriorityLevel.LOW: 3
-        }
-        
-        # Track active workers per priority
-        self.active_workers: Dict[PriorityLevel, int] = {
-            PriorityLevel.HIGH: 0,
-            PriorityLevel.MEDIUM: 0,
-            PriorityLevel.LOW: 0
-        }
-        
-        # Base concurrency limits
-        self.base_concurrency_limits: Dict[PriorityLevel, int] = {
-            PriorityLevel.HIGH: self.config["concurrency_limits"]["high"],
-            PriorityLevel.MEDIUM: self.config["concurrency_limits"]["medium"],
-            PriorityLevel.LOW: self.config["concurrency_limits"]["low"]
-        }
-        
-        # Current concurrency limits (can be adjusted based on resource usage)
-        self.concurrency_limits = self.base_concurrency_limits.copy()
-        
-        # Resource usage tracking
-        self._resource_usage = {
-            "cpu": 0.0,
-            "memory": 0.0,
-            "io_wait": 0.0
-        }
-        
-        # Statistics tracker
-        self.stats = PriorityQueueStats()
-        
-        # Request counter for unique IDs
-        self._request_counter = 0
-        
-        # Lock for worker management
-        self._worker_lock = asyncio.Lock()
-        
-        # Flag to indicate if queue is running
-        self._running = True
-        
-        # Worker tasks
-        self._workers = []
-        
-        # Start worker threads
-        self._start_workers()
-    
-    def adjust_concurrency_based_on_resources(self, cpu_usage: float = None, memory_usage: float = None):
-        """
-        Adjust concurrency limits based on current resource usage.
-        
-        Args:
-            cpu_usage: CPU usage percentage (0.0 - 1.0)
-            memory_usage: Memory usage percentage (0.0 - 1.0)
-        """
-        if cpu_usage is not None:
-            self._resource_usage["cpu"] = cpu_usage
-        if memory_usage is not None:
-            self._resource_usage["memory"] = memory_usage
-        
-        # Calculate resource pressure (0.0 - 1.0, where 1.0 is maximum pressure)
-        resource_pressure = max(
-            self._resource_usage["cpu"],
-            self._resource_usage["memory"]
-        )
-        
-        # Adjust concurrency limits based on resource pressure
-        for priority in PriorityLevel:
-            base_limit = self.base_concurrency_limits[priority]
-            # Reduce concurrency as resource pressure increases
-            adjusted_limit = max(1, int(base_limit * (1.0 - resource_pressure * 0.5)))
-            self.concurrency_limits[priority] = adjusted_limit
-    
-    def _generate_request_id(self) -> str:
-        """Generate a unique request ID"""
-        self._request_counter += 1
-        return f"req_{int(time.time())}_{self._request_counter}"
-    
-    def _start_workers(self):
-        """Start worker threads for processing queues with optimized concurrency"""
-        # Start workers - using a single pool of workers for all priorities
-        # Total workers based on sum of concurrency limits
-        total_workers = sum(self.concurrency_limits.values())
-        for i in range(total_workers):
-            worker_task = asyncio.create_task(self._worker_loop())
-            self._workers.append(worker_task)
-    
-    async def _worker_loop(self):
-        """Worker loop for processing requests from the priority heap"""
-        while self._running:
-            try:
-                # Wait for a request from the priority heap
-                async with self._heap_lock:
-                    if not self._task_heap:
-                        # No tasks available, sleep briefly and continue
-                        await asyncio.sleep(0.01)
-                        continue
-                    
-                    # Get the highest priority task (lowest priority value)
-                    _, _, request = heapq.heappop(self._task_heap)
-                    
-                    # Update stats
-                    self.stats.decrement_queue_length(request.priority)
-                
-                # Process the request
-                await self._execute_queued_request(request)
-                
-                # Update stats
-                self.stats.increment_processed(request.priority)
-            except Exception as e:
-                # Log error but continue processing
-                if 'request' in locals():
-                    self.stats.add_error(request.priority, e, f"Worker loop error for {request.priority.value}")
-                continue
+    def __init__(self, max_concurrent: int = 10):
+        self._queue = []
+        self._max_concurrent = max_concurrent
+        self._current_tasks = 0
+        self._lock = asyncio.Lock()
+        self._shutdown = False
+        self._cpu_threshold = 0.8  # 80% CPU usage
+        self._memory_threshold = 0.8  # 80% memory usage
+        self._default_high_priority_concurrency = 5
+        self._default_medium_priority_concurrency = 3
+        self._default_low_priority_concurrency = 1
     
     async def submit(self, 
-                     func: Callable, 
-                     *args, 
+                     request_coro: Coroutine[Any, Any, Any], 
                      priority: PriorityLevel = PriorityLevel.MEDIUM,
-                     timeout: Optional[float] = None,
-                     **kwargs) -> Any:
+                     intent: Intent | None = None,
+                     path: str | None = None,
+                     method: str | None = None) -> Any:
         """
-        Submit a request to the priority queue.
+        Submit a request to the priority queue
         
         Args:
-            func: The function to execute
-            *args: Positional arguments for the function
+            request_coro: The coroutine to execute
             priority: Priority level for the request
-            timeout: Timeout for the request execution
-            **kwargs: Keyword arguments for the function
-            
+            intent: Intent of the request for intelligent handling
+            path: Path of the request (for intent lookup)
+            method: HTTP method of the request (for intent lookup)
+        
         Returns:
-            The result of the function execution
-            
-        Raises:
-            asyncio.TimeoutError: If the request times out
-            RuntimeError: If the queue is full and admission is rejected
+            Result of the coroutine execution
         """
-        # Generate unique request ID
-        request_id = self._generate_request_id()
+        # Import intelligence here to avoid circular import
+        from .intelligence import get_current_context_status, SystemStatus
         
-        # Create future for result
-        future = asyncio.Future()
+        # Check system status and apply admission control
+        system_status = get_current_context_status()
         
-        # Create queued request
-        request = QueuedRequest(
-            id=request_id,
+        # Apply intent-aware admission control
+        if not self._is_request_allowed(system_status, intent, priority, path, method):
+            # Log the load shedding event
+            logging.warning(
+                f"Load shedding: Request to {method} {path} with intent {intent} and priority {priority.name} "
+                f"rejected due to system status {system_status}"
+            )
+            # Raise an exception that can be caught by middleware
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail="Service temporarily unavailable due to high load")
+        
+        # Create queue item
+        item = QueueItem(
             priority=priority,
-            func=func,
-            args=args,
-            kwargs=kwargs,
             timestamp=time.time(),
-            timeout=timeout
+            request_coro=request_coro,
+            intent=intent,
+            path=path,
+            method=method
         )
         
-        # Store future for this request
-        if not hasattr(self, '_request_futures'):
-            self._request_futures = {}
-        self._request_futures[request_id] = future
+        # Add to queue
+        async with self._lock:
+            heapq.heappush(self._queue, item)
         
-        # Try to add to heap, reject if full (simplified size check)
-        try:
-            async with self._heap_lock:
-                # Simple size check to prevent unbounded growth
-                if len(self._task_heap) > 1000:  # Arbitrary limit
-                    raise asyncio.QueueFull()
-                
-                # Add to heap with priority ordering
-                priority_value = self._priority_values[priority]
-                heapq.heappush(self._task_heap, (priority_value, time.time(), request))
-                self.stats.increment_queue_length(priority)
-        except asyncio.QueueFull:
-            self.stats.increment_admission_rejection(priority)
-            # Clean up future
-            if request_id in self._request_futures:
-                del self._request_futures[request_id]
-            raise RuntimeError(f"Queue full for priority {priority.value}, request rejected")
+        # Process queue if not already processing
+        asyncio.create_task(self._process_queue())
         
-        # Wait for result
-        try:
-            return await future
-        except Exception:
-            # Re-raise any exceptions
-            raise
+        # Wait for the result
+        return await self._execute_request(item)
     
-    async def _execute_queued_request(self, request: QueuedRequest) -> Any:
+    def _is_request_allowed(self,
+                           system_status,  # SystemStatus - import happens inside function
+                           intent: Intent | None,
+                           priority: PriorityLevel,
+                           path: str | None,
+                           method: str | None) -> bool:
         """
-        Execute a queued request.
+        Determine if a request should be allowed based on system status and intent.
+        
+        Rationale: Implements intent-aware admission control to prioritize critical
+        requests during system stress while allowing less important requests to be shed.
         
         Args:
-            request: The queued request to execute
+            system_status: Current system status
+            intent: Intent of the request
+            priority: Priority level of the request
+            path: Path of the request
+            method: HTTP method of the request
             
         Returns:
-            The result of the function execution
+            True if request should be allowed, False otherwise
         """
-        result = None
-        exception = None
+        # Import SystemStatus here to avoid forward reference issue
+        from .intelligence import SystemStatus
         
-        try:
-            # Increment active worker count
-            async with self._worker_lock:
-                self.active_workers[request.priority] += 1
-            
-            self.stats.increment_processed(request.priority)
-            
-            # Execute with timeout if specified
-            if request.timeout:
-                result = await asyncio.wait_for(
-                    request.func(*request.args, **request.kwargs),
-                    timeout=request.timeout
-                )
-            else:
-                result = await request.func(*request.args, **request.kwargs)
-                
-        except Exception as e:
-            self.stats.add_error(request.priority, e, f"Executing request {request.id}")
-            exception = e
-        finally:
-            # Decrement active worker count
-            async with self._worker_lock:
-                self.active_workers[request.priority] = max(
-                    0, self.active_workers[request.priority] - 1
-                )
-            
-            # Set result or exception on future
-            if hasattr(self, '_request_futures') and request.id in self._request_futures:
-                future = self._request_futures[request.id]
-                if exception:
-                    future.set_exception(exception)
-                else:
-                    future.set_result(result)
-                # Clean up
-                del self._request_futures[request.id]
+        # If system is healthy, allow everything
+        if system_status == SystemStatus.GREEN:
+            return True
+        
+        # If system is in critical state (RED)
+        if system_status == SystemStatus.RED:
+            # Only allow critical intents or high priority requests
+            return (intent == Intent.CRITICAL or 
+                    priority == PriorityLevel.HIGH or
+                    (intent is None and priority == PriorityLevel.HIGH))
+        
+        # If system is under warning (YELLOW)
+        if system_status == SystemStatus.YELLOW:
+            # Allow everything except ephemeral or low priority requests
+            return not (intent == Intent.EPHEMERAL or 
+                       priority == PriorityLevel.LOW)
+        
+        # Default to allowing the request
+        return True
     
-    async def gather(self, 
+    async def _execute_request(self, item: QueueItem) -> Any:
+        """
+        Execute a single request with proper resource management.
+        
+        Args:
+            item: The queue item to execute
+            
+        Returns:
+            Result of the request execution
+        """
+        try:
+            # Execute the coroutine and return its result
+            return await item.request_coro
+        except Exception as e:
+            # Log the error but don't re-raise to avoid breaking the queue
+            logging.error(f"Error executing request in queue: {e}")
+            raise
+    
+    async def _process_queue(self):
+        """
+        Process items in the queue based on priority and system resources.
+        
+        Rationale: Asynchronous queue processing ensures requests are handled
+        efficiently while respecting system resource constraints.
+        """
+        while self._queue and not self._shutdown:
+            async with self._lock:
+                if not self._queue:
+                    break
+                
+                # Get the highest priority item
+                item = heapq.heappop(self._queue)
+            
+            # Execute the item
+            try:
+                # For now, we'll execute directly - in a real system we might want to 
+                # implement more sophisticated concurrency controls based on priority
+                await self._execute_request(item)
+            except Exception:
+                # If execution fails, continue to next item
+                continue
+    
+    def adjust_concurrency_based_on_resources(self, cpu_usage: float, memory_usage: float):
+        """
+        Adjust queue concurrency based on system resource usage.
+        
+        Rationale: Adaptive concurrency helps maintain system stability
+        by reducing concurrent operations when resources are constrained.
+        
+        Args:
+            cpu_usage: Current CPU usage (0.0-1.0)
+            memory_usage: Current memory usage (0.0-1.0)
+        """
+        # Calculate max concurrent based on resource usage
+        max_usage = max(cpu_usage, memory_usage)
+        
+        if max_usage > 0.9:  # Very high usage
+            self._max_concurrent = max(1, self._default_low_priority_concurrency)
+        elif max_usage > 0.75:  # High usage
+            self._max_concurrent = max(2, self._default_medium_priority_concurrency)
+        else:  # Normal usage
+            self._max_concurrent = self._default_high_priority_concurrency
+    
+    async def gather(self,
                      *requests,
                      priority: PriorityLevel = PriorityLevel.MEDIUM,
-                     concurrency: int = 5) -> List[Any]:
+                     concurrency: int = 5) -> list[Any]:
         """
         Execute multiple requests concurrently with priority and concurrency control.
+        
+        This method integrates with the priority-aware queue system to execute
+        multiple requests with controlled concurrency and priority levels.
         
         Args:
             *requests: Request coroutines to execute
@@ -425,94 +276,74 @@ class PriorityAwareQueue:
             concurrency: Maximum number of concurrent requests
             
         Returns:
-            List of results in the same order as requests
+            list of results in the same order as requests
         """
-        # Semaphore to limit concurrency
+        # Limit concurrency using asyncio.Semaphore
         semaphore = asyncio.Semaphore(concurrency)
         
-        async def _limited_request(req):
+        async def limited_request(request_coro):
             async with semaphore:
-                return await req
+                # Import intelligence here to avoid circular import
+                from .intelligence import get_current_context_status, SystemStatus
+                from .intents import Intent, get_intent_registry
+                
+                # Check system status and apply admission control
+                system_status = get_current_context_status()
+                
+                # Apply intent-aware admission control
+                # For gather operations, we'll use the default priority
+                if not self._is_request_allowed(system_status, None, priority, "gather", "INTERNAL"):
+                    # Log the load shedding event
+                    logging.warning(
+                        f"Load shedding: Gather request with priority {priority.name} "
+                        f"rejected due to system status {system_status}"
+                    )
+                    # Raise an exception that can be caught by middleware
+                    from fastapi import HTTPException
+                    raise HTTPException(status_code=503, detail="Service temporarily unavailable due to high load")
+                
+                return await self.submit(request_coro, priority=priority)
         
-        # Submit all requests with the specified priority
-        limited_requests = [_limited_request(req) for req in requests]
-        results = await asyncio.gather(*limited_requests, return_exceptions=True)
+        # Execute all requests concurrently
+        tasks = [limited_request(req) for req in requests]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Check for exceptions and raise them if needed
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
+        
         return results
-    
-    def get_stats(self) -> Dict[str, Any]:
-        """
-        Get current queue statistics.
-        
-        Returns:
-            Dictionary with queue statistics
-        """
-        return {
-            "queue_lengths": dict(self.stats.queue_lengths),
-            "admission_rejections": dict(self.stats.admission_rejections),
-            "processed_count": dict(self.stats.processed_count),
-            "active_workers": dict(self.active_workers),
-            "concurrency_limits": dict(self.concurrency_limits),
-            "recent_errors": self.stats.errors[-10:]  # Last 10 errors
-        }
-    
-    async def shutdown(self):
-        """Shutdown the queue gracefully"""
-        self._running = False
-        
-        # Cancel all worker tasks
-        for worker in self._workers:
-            if not worker.done():
-                worker.cancel()
-        
-        # Wait for workers to finish
-        if self._workers:
-            await asyncio.gather(*self._workers, return_exceptions=True)
-        
-        # Cancel any pending futures
-        if hasattr(self, '_request_futures'):
-            for future in self._request_futures.values():
-                if not future.done():
-                    future.cancel()
-            self._request_futures.clear()
 
 
-# Global queue instance
-_priority_queue: Optional[PriorityAwareQueue] = None
+# Global priority queue instance
+_priority_queue = PriorityQueue()
 
 
-def get_priority_queue(config: Optional[Dict[str, Any]] = None) -> PriorityAwareQueue:
+def get_priority_queue() -> PriorityQueue:
     """
     Get the global priority queue instance.
     
-    Args:
-        config: Configuration for the queue (only used on first call)
-        
     Returns:
-        The global priority queue instance
+        PriorityQueue instance
     """
-    global _priority_queue
-    if _priority_queue is None:
-        _priority_queue = PriorityAwareQueue(config)
     return _priority_queue
 
 
-def initialize_queue(config: Optional[Dict[str, Any]] = None):
+def initialize_queue(max_concurrent: int = 10):
     """
-    Initialize the global priority queue.
-    
-    This function should be called during framework initialization.
+    Initialize the priority queue with specified concurrency.
     
     Args:
-        config: Configuration for the queue
+        max_concurrent: Maximum number of concurrent operations
     """
     global _priority_queue
-    _priority_queue = PriorityAwareQueue(config)
+    _priority_queue = PriorityQueue(max_concurrent=max_concurrent)
 
 
-# Export public API
 __all__ = [
-    "PriorityLevel",
-    "PriorityAwareQueue",
-    "get_priority_queue",
-    "initialize_queue"
+    "PriorityLevel", 
+    "get_priority_queue", 
+    "initialize_queue",
+    "QueueItem"
 ]

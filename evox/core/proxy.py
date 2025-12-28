@@ -1,7 +1,7 @@
 """
-Service Proxy - Intelligent context-aware service-to-service communication
+Registry-Driven Service Proxy - Intent-Aware, Context-Aware Service-to-Service Communication
 
-This module provides the intelligent service proxy for Evox, handling service-to-service
+This module provides the Registry-Driven, Intent-Aware service proxy for Evox, handling service-to-service
 communication with support for:
 1. Context-aware routing (internal vs external calls)
 2. Multi-method endpoint support
@@ -9,14 +9,14 @@ communication with support for:
 4. Automatic routing and fallback mechanisms
 5. Security enforcement
 
-This module provides the intelligent service proxy for Evox, handling service-to-service
+This module provides the Registry-Driven service proxy for Evox, handling Intent-Aware service-to-service
 communication with support for priority queuing, automatic routing, and fallback mechanisms.
 
 The proxy automatically routes calls between services using the most appropriate method
 (router, REST, hybrid) based on service configuration and availability.
 """
 
-from typing import Any, Dict, Optional, Callable, List, Union
+from typing import Any, Callable
 import httpx
 import asyncio
 from fastapi import Request
@@ -54,13 +54,13 @@ class ServiceProxy:
     Good first issue: Add circuit breaker pattern for failed services
     """
     
-    _instances: Dict[str, 'ServiceProxy'] = {}
+    _instances: dict[str, 'ServiceProxy'] = {}
     
     def __init__(self, service_name: str):
         self.service_name = service_name
         self.auth_manager = get_auth_manager()
         # Track registered service endpoints for method dispatch
-        self._endpoints: Dict[str, Dict[str, Callable]] = {}
+        self._endpoints: dict[str, dict[str, Callable]] = {}
         # Track HTTP method for each call
         self._http_method = None
         # Context-aware priority management
@@ -76,7 +76,7 @@ class ServiceProxy:
             # Don't proxy private methods
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{method_name}'")
         
-        async def proxy_method(*args, priority: Union[str, None] = None, **kwargs):
+        async def proxy_method(*args, priority: str | None = None, **kwargs):
             """
             Proxy method with intelligent, context-aware priority support.
             
@@ -105,7 +105,7 @@ class ServiceProxy:
         
         return proxy_method
     
-    def _determine_priority(self, explicit_priority: Optional[str], args: tuple, kwargs: dict) -> str:
+    def _determine_priority(self, explicit_priority: str | None, args: tuple, kwargs: dict) -> str:
         """
         Determine priority based on context, schema metadata, and requester.
         
@@ -132,7 +132,7 @@ class ServiceProxy:
         # 4. Default to medium priority
         return "medium"
     
-    def _check_schema_priority(self, kwargs: dict) -> Optional[str]:
+    def _check_schema_priority(self, kwargs: dict) -> str | None:
         """Check if any schema in kwargs has a priority boost"""
         # Look for Pydantic models in kwargs
         for key, value in kwargs.items():
@@ -148,7 +148,7 @@ class ServiceProxy:
         
         return None
     
-    def _check_context_priority(self, kwargs: dict) -> Optional[str]:
+    def _check_context_priority(self, kwargs: dict) -> str | None:
         """Check for context-aware priority from headers or payload"""
         # Check headers for priority information
         headers = kwargs.get('headers', {})
@@ -208,7 +208,7 @@ class ServiceProxy:
             print(f"⚠️  Service call failed for {self.service_name}.{method_name}: {e}")
             raise
     
-    def _is_internal_call(self, kwargs: Dict) -> bool:
+    def _is_internal_call(self, kwargs: dict) -> bool:
         """
         Detect if the call is internal (from another Evox service) or external (from client).
         
@@ -344,7 +344,7 @@ class ServiceProxy:
                      *calls, 
                      policy: str = "partial", 
                      priority: str = "medium",
-                     concurrency: int = 5) -> List[Any]:
+                     concurrency: int = 5) -> list[Any]:
         """
         Execute multiple service calls concurrently with priority and policy control.
         
@@ -358,7 +358,7 @@ class ServiceProxy:
             concurrency: Maximum number of concurrent requests
             
         Returns:
-            List of results in the same order as calls
+            list of results in the same order as calls
             
         Example:
             # Execute multiple calls with high priority and limited concurrency

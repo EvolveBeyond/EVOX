@@ -11,7 +11,7 @@ This module provides a pluggable authentication system with:
 
 import jwt
 import time
-from typing import Optional, Dict, Any, List, Union
+from typing import Any
 from functools import wraps
 from fastapi import HTTPException, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -33,7 +33,7 @@ class AuthConfig:
 class TokenData:
     """Token data structure"""
     
-    def __init__(self, user_id: str, roles: List[str], scopes: List[str], 
+    def __init__(self, user_id: str, roles: list[str], scopes: list[str],
                  exp: int, iat: int, iss: str = "evox"):
         self.user_id = user_id
         self.roles = roles
@@ -56,12 +56,12 @@ class CIAClassification:
 class AuthManager:
     """Authentication manager with JWT and role-based access control"""
     
-    def __init__(self, config: Optional[AuthConfig] = None):
+    def __init__(self, config: AuthConfig | None = None):
         self.config = config or AuthConfig()
         self.security = HTTPBearer()
     
-    def create_access_token(self, user_id: str, roles: List[str] = None, 
-                          scopes: List[str] = None) -> str:
+    def create_access_token(self, user_id: str, roles: list[str] | None = None,
+                          scopes: list[str] | None = None) -> str:
         """Create JWT access token"""
         roles = roles or []
         scopes = scopes or []
@@ -108,7 +108,7 @@ class AuthManager:
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Invalid token")
     
-    def verify_internal_token(self, token: str) -> Dict[str, Any]:
+    def verify_internal_token(self, token: str) -> dict[str, Any]:
         """Verify internal service token"""
         try:
             payload = jwt.decode(token, self.config.internal_token_secret,
@@ -177,13 +177,13 @@ class AuthManager:
             return wrapper
         return decorator
     
-    def require_role(self, required_roles: Union[str, List[str]]):
+    def require_role(self, required_roles: str | list[str]):
         """Decorator to require specific roles"""
         if isinstance(required_roles, str):
             required_roles = [required_roles]
         return self._create_auth_decorator("role", required_roles)
     
-    def require_scope(self, required_scopes: Union[str, List[str]]):
+    def require_scope(self, required_scopes: str | list[str]):
         """Decorator to require specific scopes"""
         if isinstance(required_scopes, str):
             required_scopes = [required_scopes]
@@ -200,16 +200,16 @@ class AuthManager:
             return wrapper
         return decorator
     
-    def require_intent(self, intent_type: str = None, required_roles: List[str] = None, cia_classification: CIAClassification = None):
+    def require_intent(self, intent_type: str | None = None, required_roles: list[str] | None = None, cia_classification: CIAClassification | None = None):
         """Decorator to require specific roles for data intent operations with CIA classification support"""
         return self._create_auth_decorator("intent", required_roles, cia_classification)
 
 
 # Global auth manager instance
-_auth_manager: Optional[AuthManager] = None
+_auth_manager: AuthManager | None = None
 
 
-def get_auth_manager(config: Optional[AuthConfig] = None) -> AuthManager:
+def get_auth_manager(config: AuthConfig | None = None) -> AuthManager:
     """Get or create global auth manager instance"""
     global _auth_manager
     if _auth_manager is None:

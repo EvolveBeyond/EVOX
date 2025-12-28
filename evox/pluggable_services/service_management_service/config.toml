@@ -1,0 +1,16 @@
+# Service Management Service Configuration
+
+[service]
+name = "service-management-service"
+port = 8005
+
+[storage]
+backend = "memory"
+
+[caching]
+default_ttl = 300
+enable_fallback = true
+
+[service_management]
+auto_discovery = true
+health_check_interval = 30

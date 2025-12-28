@@ -1,19 +1,28 @@
 """
-Service Builder - Main entry point for creating Evox services
+Service Builder - Intent-Aware, Registry-Driven Service Orchestration
 
 This module provides the fluent API for building Evox services with minimal configuration.
-It supports priority-aware request queuing and aggressive cache fallback mechanisms.
+It supports Intent-Aware request processing, Registry-Driven service discovery,
+and priority-aware request queuing with intelligent fallback mechanisms.
 """
 
 import asyncio
 import uvicorn
-from typing import Optional, Callable, Any, Dict, List, Type, Union, get_type_hints
-from fastapi import FastAPI, APIRouter, Request
+from typing import Any, get_type_hints, Callable
+from collections.abc import Callable as CallableABC
+from fastapi import FastAPI, APIRouter, Request, HTTPException
+from fastapi.responses import JSONResponse
 from functools import wraps
 from pydantic import BaseModel
 from typing import get_origin, get_args
+from datetime import datetime
+import logging
 
 from .queue import PriorityLevel, get_priority_queue
+from .inject import get_health_registry, get_service_health
+from .common import BaseProvider
+from .intents import Intent, get_intent_registry
+from .lifecycle import on_service_init
 
 
 class ServiceBuilder:
@@ -37,9 +46,9 @@ class ServiceBuilder:
         self._health_endpoint = "/health"
         self.app = FastAPI(title=f"Evox Service - {name}")
         self.router = APIRouter()
-        self.startup_handlers: List[Callable] = []
-        self.shutdown_handlers: List[Callable] = []
-        self.background_tasks: List[Dict[str, Any]] = []
+        self.startup_handlers: list[Callable] = []
+        self.shutdown_handlers: list[Callable] = []
+        self.background_tasks: list[dict[str, Any]] = []
         
         # Include router in app
         self.app.include_router(self.router)
@@ -48,6 +57,9 @@ class ServiceBuilder:
         @self.router.get(self._health_endpoint)
         async def health_check():
             return {"status": "healthy", "service": self.name}
+        
+        # Add middleware for intent-aware admission control
+        self.app.middleware("http")(self._intent_aware_middleware)
         
         # Store service instance for DI access
         self._instance = None
@@ -68,6 +80,22 @@ class ServiceBuilder:
         self._register_controllers()
         # Store instance for DI
         ServiceBuilder._instances[self.name] = self
+        
+        # Register with inject system for type-safe injection
+        from .inject import HealthAwareInject
+        HealthAwareInject.register_instance(self.name, self)
+        
+        # Trigger lifecycle event for service initialization
+        import asyncio
+        try:
+            # Run the async lifecycle event in the current event loop if available
+            loop = asyncio.get_running_loop()
+            # Schedule the event to run soon
+            loop.create_task(on_service_init(self.name, self))
+        except RuntimeError:
+            # No event loop running, run it directly
+            asyncio.run(on_service_init(self.name, self))
+        
         return self
     
     @classmethod
@@ -83,6 +111,7 @@ class ServiceBuilder:
             controller_class = controller_info["class"]
             prefix = controller_info["prefix"]
             common_kwargs = controller_info["common_kwargs"]
+            inherit_routes = controller_info.get("inherit_routes", False)
             
             # Create controller instance
             try:
@@ -98,6 +127,13 @@ class ServiceBuilder:
                     
                 attr = getattr(controller_instance, attr_name)
                 if callable(attr) and hasattr(attr, '_evox_methods'):
+                    # Determine if this method is defined in the current class (not inherited)
+                    is_defined_in_current_class = attr_name in controller_class.__dict__
+                    
+                    # If inherit_routes is False, only register methods defined in this class
+                    if not inherit_routes and not is_defined_in_current_class:
+                        continue
+                    
                     # Bind the method to the instance
                     bound_method = attr.__get__(controller_instance, controller_class)
                     
@@ -111,6 +147,19 @@ class ServiceBuilder:
                         method = method_info["method"]
                         paths = method_info["paths"]
                         kwargs = method_info["kwargs"]
+                        
+                        # Extract intent and priority from kwargs
+                        intent = kwargs.get('intent')
+                        priority = kwargs.get('priority', 'medium')
+                        
+                        # Register intent in the registry
+                        for path in paths:
+                            full_path = prefix + path if prefix else path
+                            get_intent_registry().register_route_intent(
+                                full_path, method, 
+                                intent=intent, 
+                                priority=priority
+                            )
                         
                         # Merge common kwargs with method-specific kwargs
                         merged_kwargs = {**common_kwargs, **kwargs}
@@ -145,7 +194,7 @@ class ServiceBuilder:
         # Clear the registry after registration
         _controller_registry.clear()
     
-    def endpoint(self, path: str, methods: List[str] = ["GET"], **kwargs):
+    def endpoint(self, path: str, methods: list[str] = ["GET"], **kwargs):
         """
         Decorator for defining service endpoints
         
@@ -154,13 +203,23 @@ class ServiceBuilder:
             methods: HTTP methods
             **kwargs: Additional endpoint configuration including priority settings
         """
-        def decorator(func: Callable):
+        def decorator(func: Callable[..., Any]):
             # Extract priority from kwargs if present
             priority_str = kwargs.pop('priority', 'medium')
+            intent = kwargs.pop('intent', None)
+            
             try:
-                priority = PriorityLevel(priority_str)
-            except ValueError:
+                priority = PriorityLevel[priority_str.upper()]
+            except KeyError:
                 priority = PriorityLevel.MEDIUM  # Default to medium priority
+            
+            # Register intent in the registry
+            for method in methods:
+                get_intent_registry().register_route_intent(
+                    path, method, 
+                    intent=intent, 
+                    priority=priority_str
+                )
             
             # Store priority information for later use
             func._evox_priority = priority
@@ -180,21 +239,21 @@ class ServiceBuilder:
         self.app.include_router(group_router)
         return group_router
     
-    def on_startup(self, func: Callable):
+    def on_startup(self, func: Callable[..., Any]):
         """Register a startup handler"""
         self.startup_handlers.append(func)
         self.app.on_event("startup")(func)
         return func
     
-    def on_shutdown(self, func: Callable):
+    def on_shutdown(self, func: Callable[..., Any]):
         """Register a shutdown handler"""
         self.shutdown_handlers.append(func)
         self.app.on_event("shutdown")(func)
         return func
     
-    def background_task(self, interval: int):
+    def background_task(self, interval: int) -> 'ServiceBuilder':
         """Decorator for defining background tasks"""
-        def decorator(func: Callable):
+        def decorator(func: Callable[..., Any]):
             self.background_tasks.append({
                 "func": func,
                 "interval": interval
@@ -205,7 +264,7 @@ class ServiceBuilder:
     async def gather(self, 
                      *requests,
                      priority: str = "medium",
-                     concurrency: int = 5) -> List[Any]:
+                     concurrency: int = 5) -> list[Any]:
         """
         Execute multiple requests concurrently with priority and concurrency control.
         
@@ -229,8 +288,8 @@ class ServiceBuilder:
             )
         """
         try:
-            priority_level = PriorityLevel(priority)
-        except ValueError:
+            priority_level = PriorityLevel[priority.upper()]
+        except KeyError:
             priority_level = PriorityLevel.MEDIUM
             
         queue = get_priority_queue()
@@ -238,6 +297,10 @@ class ServiceBuilder:
     
     def run(self, dev: bool = False):
         """Run the service"""
+        # Perform initial health checks on startup
+        if not dev:
+            asyncio.run(self._perform_initial_health_checks())
+        
         if dev:
             uvicorn.run(
                 self.app,
@@ -253,126 +316,219 @@ class ServiceBuilder:
                 port=self._port,
                 log_level="info"
             )
+    
+    async def _perform_initial_health_checks(self):
+        """
+        Perform initial health checks on all registered providers during startup.
+        
+        Rationale: This ensures that all services are aware of the health status
+        of their dependencies at startup time, enabling immediate degraded mode
+        operations if needed.
+        """
+        logging.info(f"Performing initial health checks for service: {self.name}")
+        
+        # Get the health registry to check all registered services
+        health_registry = get_health_registry()
+        
+        # Check health for all registered providers
+        for service_name, health_info in health_registry.items():
+            instance = health_info.get("instance")
+            if instance and isinstance(instance, BaseProvider):
+                is_healthy = await instance.check_health()
+                
+                # Update health registry with new check
+                health_info["is_healthy"] = is_healthy
+                health_info["last_check"] = datetime.now()
+                
+                if not is_healthy:
+                    logging.warning(f"Service '{service_name}' is unhealthy at startup")
+                else:
+                    logging.info(f"Service '{service_name}' is healthy at startup")
+    
+    async def _intent_aware_middleware(self, request: Request, call_next):
+        """
+        Intent-aware middleware that implements admission control based on system status.
+        
+        Rationale: This middleware intercepts requests before they reach the handler
+        and applies intent-aware admission control based on system resource status.
+        """
+        # Import intelligence here to avoid circular import
+        from .intelligence import get_current_context_status, SystemStatus
+        
+        # Get the route information
+        path = request.url.path
+        method = request.method
+        
+        # Get intent and priority for this route from the registry
+        route_info = get_intent_registry().get_route_intent(path, method)
+        route_intent = route_info.get("intent")
+        route_priority_str = route_info.get("priority", "medium")
+        
+        # Convert priority string to PriorityLevel enum
+        try:
+            from .queue import PriorityLevel
+            route_priority = PriorityLevel[route_priority_str.upper()]
+        except KeyError:
+            route_priority = PriorityLevel.MEDIUM
+        
+        # Check system status and apply admission control
+        system_status = get_current_context_status()
+        
+        # Apply intent-aware admission control
+        from .queue import PriorityQueue
+        queue = get_priority_queue()
+        is_allowed = queue._is_request_allowed(system_status, route_intent, route_priority, path, method)
+        
+        if not is_allowed:
+            # Log the load shedding event
+            logging.warning(
+                f"Load shedding: Request to {method} {path} with intent {route_intent} and priority {route_priority_str} "
+                f"rejected due to system status {system_status}"
+            )
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Service temporarily unavailable due to high load"}
+            )
+        
+        # If request is allowed, proceed with normal processing
+        response = await call_next(request)
+        return response
 
 
 # Convenience functions
 def service(name: str) -> ServiceBuilder:
-    """Create a new service builder"""
+    """Create a new service builder with string name"""
     return ServiceBuilder(name)
 
 
+def Service(service_type):
+    """Type-safe service factory that resolves name from config.toml"""
+    # In a real implementation, this would read the config.toml file
+    # associated with the service_type to get the service name
+    # For now, we'll use the class name as the service name
+    service_name = service_type.__name__ if hasattr(service_type, '__name__') else str(service_type)
+    
+    # Convert CamelCase to kebab-case for service names
+    import re
+    service_name = re.sub(r'(?<!^)(?=[A-Z])', '-', service_name).lower()
+    service_name = service_name.replace('_service', '-service')
+    
+    # Register the service type with its name for DI
+    from .inject import HealthAwareInject
+    HealthAwareInject.register_service(service_type, service_name)
+    
+    return ServiceBuilder(service_name)
+
+
 # Decorators for endpoints
-def get(path: str, **kwargs):
-    """GET endpoint decorator with priority support"""
-    def decorator(func: Callable):
+def get(path: str, intent: str = None, priority: str = "medium", **kwargs):
+    """GET endpoint decorator with intent and priority support"""
+    def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["GET"],
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
-def post(path: str, **kwargs):
-    """POST endpoint decorator with priority support"""
-    def decorator(func: Callable):
+def post(path: str, intent: str = None, priority: str = "medium", **kwargs):
+    """POST endpoint decorator with intent and priority support"""
+    def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["POST"],
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
-def put(path: str, **kwargs):
-    """PUT endpoint decorator with priority support"""
-    def decorator(func: Callable):
+def put(path: str, intent: str = None, priority: str = "medium", **kwargs):
+    """PUT endpoint decorator with intent and priority support"""
+    def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["PUT"],
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
-def delete(path: str, **kwargs):
-    """DELETE endpoint decorator with priority support"""
-    def decorator(func: Callable):
+def delete(path: str, intent: str = None, priority: str = "medium", **kwargs):
+    """DELETE endpoint decorator with intent and priority support"""
+    def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["DELETE"],
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
-def patch(path: str, **kwargs):
-    """PATCH endpoint decorator with priority support"""
-    def decorator(func: Callable):
+def patch(path: str, intent: str = None, priority: str = "medium", **kwargs):
+    """PATCH endpoint decorator with intent and priority support"""
+    def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["PATCH"],
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
-def head(path: str, **kwargs):
-    """HEAD endpoint decorator with priority support"""
-    def decorator(func: Callable):
+def head(path: str, intent: str = None, priority: str = "medium", **kwargs):
+    """HEAD endpoint decorator with intent and priority support"""
+    def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["HEAD"],
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
-def options(path: str, **kwargs):
-    """OPTIONS endpoint decorator with priority support"""
-    def decorator(func: Callable):
+def options(path: str, intent: str = None, priority: str = "medium", **kwargs):
+    """OPTIONS endpoint decorator with intent and priority support"""
+    def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["OPTIONS"],
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
 
-
-def endpoint(path: str = None, methods: List[str] = ["GET"], **kwargs):
+def endpoint(path: str = None, methods: list[str] = ["GET"], intent: str = None, priority: str = "medium", **kwargs):
     """
     Generic endpoint decorator for internal/non-route handlers
     
     Args:
         path: Endpoint path (optional for internal handlers)
         methods: HTTP methods
+        intent: Intent for this endpoint
+        priority: Priority level for this endpoint
         **kwargs: Additional endpoint configuration including priority settings
     """
-    def decorator(func: Callable):
+    def decorator(func: Callable[..., Any]):
         func._evox_endpoint = {
             "path": path,
             "methods": methods,
-            "kwargs": kwargs
+            "kwargs": {**kwargs, "intent": intent, "priority": priority}
         }
         return func
     return decorator
 
 
 # Type aliases for parameter injection with Pydantic Annotated support
-try:
-    from typing import Annotated
-except ImportError:
-    # For Python < 3.9, use typing_extensions
-    from typing_extensions import Annotated
+from typing import Annotated
 
 # Enhanced parameter injection with type safety
 # Rationale: Using Pydantic's Annotated provides compile-time type checking
@@ -388,12 +544,15 @@ _controller_registry = {}
 # Service instances registry
 ServiceBuilder._instances = {}
 
-def Controller(prefix: str = "", **kwargs):
+def Controller(prefix: str = "", intent: str = None, priority: str = "medium", inherit_routes: bool = False, **kwargs):
     """
     Decorator for creating controllers in class-based syntax
     
     Args:
         prefix: Common prefix for all endpoints in this controller
+        intent: Default intent for all endpoints in this controller
+        priority: Default priority for all endpoints in this controller
+        inherit_routes: Whether to inherit routes from parent classes (default: False)
         **kwargs: Common configuration for all endpoints (cache, auth, etc.)
     """
     def decorator(cls):
@@ -401,7 +560,8 @@ def Controller(prefix: str = "", **kwargs):
         controller_info = {
             "class": cls,
             "prefix": prefix,
-            "common_kwargs": kwargs
+            "common_kwargs": {**kwargs, "intent": intent, "priority": priority},
+            "inherit_routes": inherit_routes
         }
         _controller_registry[cls.__name__] = controller_info
         return cls
@@ -412,9 +572,11 @@ def Controller(prefix: str = "", **kwargs):
 class _MethodDecorator:
     """Base class for HTTP method decorators in class-based syntax"""
     
-    def __init__(self, *paths, **kwargs):
+    def __init__(self, *paths, intent: str = None, priority: str = "medium", **kwargs):
         self.paths = paths
-        self.kwargs = kwargs
+        self.intent = intent
+        self.priority = priority
+        self.kwargs = {**kwargs, "intent": intent, "priority": priority}
     
     def __call__(self, func):
         # Store method information for later registration
@@ -429,15 +591,14 @@ class _MethodDecorator:
         func._evox_methods.append(method_info)
         return func
 
-# HTTP method decorators for class-based syntax
-# Generate HTTP method decorators dynamically
+# Create HTTP method decorators using generator pattern
 def _create_http_method_decorator(method_name):
     """Create an HTTP method decorator class dynamically"""
     return type(method_name, (_MethodDecorator,), {
         "__doc__": f"{method_name} method decorator for class-based syntax"
     })
 
-# Create HTTP method decorators using generator pattern
+# Create HTTP method decorators
 GET = _create_http_method_decorator("GET")
 POST = _create_http_method_decorator("POST")
 PUT = _create_http_method_decorator("PUT")
@@ -445,38 +606,3 @@ DELETE = _create_http_method_decorator("DELETE")
 PATCH = _create_http_method_decorator("PATCH")
 HEAD = _create_http_method_decorator("HEAD")
 OPTIONS = _create_http_method_decorator("OPTIONS")
-
-
-# Intent decorator for both syntaxes
-class Intent:
-    """Intent decorator for declaring data intent behavior"""
-    
-    def __init__(self, **kwargs):
-        self.intent_config = kwargs
-    
-    def __call__(self, func_or_cls):
-        """Apply intent to a function or class"""
-        if hasattr(func_or_cls, '__dict__'):
-            # Class-based: apply to all methods
-            func_or_cls._evox_intent = self.intent_config
-        else:
-            # Function-based: apply to function
-            func_or_cls._evox_intent = self.intent_config
-        return func_or_cls
-    
-    # Generator-based pattern for creating intent methods
-    @staticmethod
-    def _create_intent_method(name, **default_kwargs):
-        """Create an intent method dynamically"""
-        def intent_method(ttl: Union[int, str] = 300, **kwargs):
-            intent_config = {**default_kwargs, "ttl": ttl, **kwargs}
-            return Intent(**intent_config)
-        intent_method.__name__ = name
-        intent_method.__doc__ = f"""Declare {name.replace('_', ' ')} intent"""
-        return staticmethod(intent_method)
-
-# Generate intent methods dynamically
-Intent.cacheable = Intent._create_intent_method(
-    "cacheable",
-    cacheable=True
-)

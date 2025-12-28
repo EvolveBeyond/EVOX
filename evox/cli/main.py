@@ -1,1206 +1,169 @@
 """
-Evox CLI - Command line interface for the Evox framework
+Nested CLI for EVOX Framework
 
-This module provides the command-line interface for managing Evox projects,
-services, and platform operations including the new health monitoring system.
+This CLI implements a nested command structure with Typer for a professional UX.
+It acts as a thin interface that delegates all business logic to core managers.
+It only handles file I/O and terminal output, with no internal logic for dependency
+resolution or plugin states.
+
+Commands:
+- evox new project <name>
+- evox new service <name>
+- evox new plugin <name>
+- evox new db <name>
+- evox maintenance sync
+- evox maintenance health
+- evox maintenance status
 """
 
-import os
-import sys
-import webbrowser
-import tempfile
-from pathlib import Path
 import typer
-from typing import Optional
+from pathlib import Path
+
 import json
-from datetime import datetime
 
+from evox.core.project_manager import get_project_manager, ProjectManager
+from evox.core.plugin_manager import get_plugin_manager, PluginManager
 
+# Create main app
 app = typer.Typer(
     name="evox",
-    help="Evox - Modern Python Microservices Framework CLI",
+    help="EVOX: The Smart companion for Python 3.13+ Services",
     no_args_is_help=True
 )
 
+# Create sub-apps for nested commands
+new_app = typer.Typer(help="Create new EVOX components")
+app.add_typer(new_app, name="new")
 
-@app.command()
-def new(
-    project_type: str = typer.Argument(..., help="Type of project to create (pj for project, sv for service)"),
-    name: str = typer.Argument(..., help="Name of the project or service")
-):
-    """Create a new Evox project or service"""
-    if project_type == "pj":
-        create_project(name)
-    elif project_type == "sv":
-        create_service(name)
+maintenance_app = typer.Typer(help="Maintenance and system commands")
+app.add_typer(maintenance_app, name="maintenance")
+
+
+@new_app.command("project")
+def new_project(name: str):
+    """Setup root structure + plugins/ folder."""
+    project_manager = get_project_manager()
+    success = project_manager.create_project(name)
+    
+    if success:
+        typer.secho(f"✅ Created EVOX project '{name}'", fg=typer.colors.GREEN)
     else:
-        typer.echo(f"Invalid project type: {project_type}. Use 'pj' for project or 'sv' for service.")
-        raise typer.Exit(code=1)
+        typer.secho(f"❌ Failed to create project '{name}'", fg=typer.colors.RED)
 
 
-def create_project(name: str):
-    """Create a new Evox project"""
-    project_path = Path(name)
+@new_app.command("service")
+def new_service(name: str):
+    """Setup service folder + config.toml."""
+    project_manager = get_project_manager()
+    success = project_manager.create_service(name)
     
-    if project_path.exists():
-        typer.echo(f"Project directory '{name}' already exists!")
-        raise typer.Exit(code=1)
-    
-    # Create project structure
-    project_path.mkdir(parents=True)
-    
-    # Create basic project files
-    (project_path / "services").mkdir()
-    
-    # Create config.toml from template
-    template_path = Path(__file__).parent / "templates" / "config.toml"
-    if template_path.exists():
-        config_content = template_path.read_text().replace("{{ project_name }}", name)
-        (project_path / "config.toml").write_text(config_content)
+    if success:
+        typer.secho(f"✅ Created EVOX service '{name}'", fg=typer.colors.GREEN)
     else:
-        (project_path / "config.toml").write_text("# Evox Project Configuration\n")
-        
-    (project_path / ".env.example").write_text("# Environment variables\n")
-    (project_path / "README.md").write_text(f"# {name}\n\nEvox project created with `evox new pj {name}`\n")
+        typer.secho(f"❌ Failed to create service '{name}'", fg=typer.colors.RED)
+
+
+@maintenance_app.command("sync")
+def sync():
+    """Calls Core to scan/install dependencies via rye."""
+    plugin_manager = get_plugin_manager()
+    success = plugin_manager.sync_dependencies()
     
-    # Create pyproject.toml with Rye configuration
-    pyproject_content = f'''[project]
-name = "{name}"
-version = "0.1.0"
-description = "Evox microservices project - Rye-Native"
-authors = [
-    {{ name = "Developer", email = "dev@example.com" }}
-]
-dependencies = [
-    "evox>=0.0.3-alpha",
-]
-requires-python = ">= 3.11"
-readme = "README.md"
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Software Development :: Libraries :: Application Frameworks",
-]
+    if success:
+        typer.secho("✅ Dependencies synced successfully", fg=typer.colors.GREEN)
+    else:
+        typer.secho("❌ Failed to sync dependencies", fg=typer.colors.RED)
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
 
-[tool.rye]
-managed = true
-dev-dependencies = [
-    "pytest>=7.0.0,<8.0.0",
-    "httpx>=0.25.0,<0.26.0",
-    "black>=23.0.0,<24.0.0",
-    "isort>=5.12.0,<6.0.0",
-]
-
-[tool.hatch.metadata]
-allow-direct-references = true
-
-[tool.hatch.build.targets.wheel]
-packages = ["services"]
-
-[project.scripts]
-dev = "evox run --dev"
-health = "evox health"
-
-test = "evox test"
-
-[tool.rye.scripts]
-dev = "evox run --dev"
-health = "evox health"
-test = "evox test"
-'''
+@new_app.command("plugin")
+def new_plugin(name: str):
+    """Create a new plugin template."""
+    plugin_manager = get_plugin_manager()
+    success = plugin_manager.create_plugin_template(name)
     
-    (project_path / "pyproject.toml").write_text(pyproject_content)
+    if success:
+        typer.secho(f"✅ Created plugin template '{name}'", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"❌ Failed to create plugin template '{name}'", fg=typer.colors.RED)
+
+
+@new_app.command("db")
+def new_db(name: str):
+    """Add database configuration to project."""
+    project_manager = get_project_manager()
+    success = project_manager.add_database_config(name)
     
-    typer.echo(f"✅ Created Evox project '{name}' at {project_path.absolute()}")
+    if success:
+        typer.secho(f"✅ Added database config '{name}'", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"❌ Failed to add database config '{name}'", fg=typer.colors.RED)
 
 
-def create_service(name: str):
-    """Create a new Evox service"""
-    service_path = Path("services") / name
+@maintenance_app.command("health")
+def health():
+    """Run system-wide health checks."""
+    project_manager = get_project_manager()
+    plugin_manager = get_plugin_manager()
     
-    if not Path("services").exists():
-        typer.echo("Error: 'services' directory not found. Run this command from an Evox project root.")
-        raise typer.Exit(code=1)
+    # Check project health
+    project_status = project_manager.get_project_status()
     
-    if service_path.exists():
-        typer.echo(f"Service directory '{name}' already exists!")
-        raise typer.Exit(code=1)
+    # Check services
+    services = project_manager.list_services()
     
-    # Create service structure
-    service_path.mkdir(parents=True)
+    # Check plugins
+    plugins = plugin_manager.list_plugins()
     
-    # Create service template with Evox syntax
-    main_py_content = f'''"""
-{name} Service - Generated by Evox CLI
-
-Choose function-based syntax for simplicity or class-based syntax for grouping.
-Both syntaxes are fully featured and performant.
-"""
-
-# Function-based syntax (default, minimal, FastAPI-familiar)
-# Uncomment this section to use function-based syntax
-"""
-from evox import service, get, post, delete, Param, Query, Body, Intent, auth, data_io
-
-svc = service("{name}") \\
-    .port(8000) \\
-    .build()
-
-@get("/users/{{user_id:int}}", cache=3600)
-async def get_user(user_id: Param[int]):
-    # Read user data with intent-aware behavior
-    user = await data_io.read(f"user:{{user_id}}")
-    if user:
-        return user
+    typer.secho("🏥 EVOX Health Check", fg=typer.colors.BLUE, bold=True)
+    typer.echo(f"Project Status: {project_status.value}")
+    typer.echo(f"Services: {len(services)}")
+    typer.echo(f"Plugins: {len(plugins)}")
     
-    # Mock user data
-    user = {{
-        "id": user_id,
-        "name": f"User {{user_id}}",
-        "email": f"user{{user_id}}@example.com"
-    }}
+    # Overall health status
+    if len(services) > 0 or len(plugins) > 0:
+        typer.secho("✅ System is healthy", fg=typer.colors.GREEN)
+    else:
+        typer.secho("⚠️  No services or plugins detected", fg=typer.colors.YELLOW)
+
+
+@maintenance_app.command("status")
+def status():
+    """Beautiful overview of services, plugins, and system load."""
+    project_manager = get_project_manager()
+    plugin_manager = get_plugin_manager()
     
-    # Write with intent (cacheable for 1 hour)
-    await data_io.write(f"user:{{user_id}}", user, ttl=3600)
-    return user
-
-@post("/users")
-async def create_user(data: Body[dict]):
-    user_id = data.get("id", 1)
-    user = {{
-        "id": user_id,
-        "name": data.get("name", "Unknown"),
-        "email": data.get("email", "unknown@example.com")
-    }}
+    typer.secho("📊 EVOX Status Overview", fg=typer.colors.BLUE, bold=True)
     
-    # Write user data with intent
-    await data_io.write(f"user:{{user_id}}", user, ttl=3600)
-    return {{"status": "created", "user": user}}
+    # Project status
+    project_status = project_manager.get_project_status()
+    typer.echo(f"Project Status: {project_status.value}")
+    
+    # Services table
+    services = project_manager.list_services()
+    if services:
+        typer.echo(f"\nServices ({len(services)}):")
+        typer.echo("-" * 60)
+        for service in services:
+            name = service["name"]
+            status = service["status"].value
+            path = service["path"]
+            typer.echo(f"{name:<20} {status:<15} {path}")
+    else:
+        typer.echo("\nServices: 0")
+    
+    # Plugins table
+    plugins = plugin_manager.list_plugins()
+    if plugins:
+        typer.echo(f"\nPlugins ({len(plugins)}):")
+        typer.echo("-" * 60)
+        for plugin in plugins:
+            name = plugin["name"]
+            status = plugin["status"].value
+            path = plugin["path"]
+            typer.echo(f"{name:<20} {status:<15} {path}")
+    else:
+        typer.echo("\nPlugins: 0")
 
-@delete("/users/{{user_id:int}}", auth_role="admin")
-async def delete_user(user_id: Param[int]):
-    # Delete user data
-    await data_io.delete(f"user:{{user_id}}")
-    return {{"status": "deleted", "user_id": user_id}}
-"""
-
-# Class-based syntax (opt-in, grouped, NestJS-inspired)
-# Uncomment this section to use class-based syntax
-from evox import service, Controller, GET, POST, DELETE, Param, Query, Body, Intent, auth, data_io
-
-svc = service("{name}") \\
-    .port(8000) \\
-    .build()
-
-@Controller("/users", cache=300, auth=True, tags=["users"])
-class UserController:
-
-    @GET("/{{user_id:int}}", cache=3600, priority="high")  # override common cache
-    @Intent.cacheable(ttl=3600)
-    async def get_user(self, user_id: Param[int]):
-        """Get user by ID"""
-        # Read user data with intent-aware behavior
-        user = await data_io.read(f"user:{{user_id}}")
-        if user:
-            return user
-        
-        # Mock user data
-        user = {{
-            "id": user_id,
-            "name": f"User {{user_id}}",
-            "email": f"user{{user_id}}@example.com"
-        }}
-        
-        # Write with intent (cacheable for 1 hour)
-        await data_io.write(f"user:{{user_id}}", user, ttl=3600)
-        return user
-
-    @POST("/")
-    async def create_user(self, data: Body[dict]):
-        """Create new user"""
-        user_id = data.get("id", 1)
-        user = {{
-            "id": user_id,
-            "name": data.get("name", "Unknown"),
-            "email": data.get("email", "unknown@example.com")
-        }}
-        
-        # Write user data with intent
-        await data_io.write(f"user:{{user_id}}", user, ttl=3600)
-        return {{"status": "created", "user": user}}
-
-    @DELETE("/{{user_id:int}}", auth_role="admin")
-    async def delete_user(self, user_id: Param[int]):
-        """Delete user (admin only)"""
-        # Delete user data
-        await data_io.delete(f"user:{{user_id}}")
-        return {{"status": "deleted", "user_id": user_id}}
-
-    @GET("/search", priority="medium")
-    async def search_users(self, q: Query[str] = None):
-        """Search users"""
-        if not q:
-            return {{"users": [], "count": 0}}
-        
-        # In a real implementation, this would search the database
-        # For demo purposes, we'll return mock data
-        users = [
-            {{"id": 1, "name": f"User 1 - {{q}}", "email": "user1@example.com"}},
-            {{"id": 2, "name": f"User 2 - {{q}}", "email": "user2@example.com"}}
-        ]
-        return {{"users": users, "count": len(users)}}
-
-# Example background task
-@svc.background_task(interval=60)
-async def cleanup_expired_data():
-    # Cleanup expired data periodically
-    print("Cleaning up expired data...")
-
-# Example startup handler
-@svc.on_startup
-async def startup():
-    print("{name} service started")
-
-# Example shutdown handler
-@svc.on_shutdown
-async def shutdown():
-    print("{name} service stopped")
 
 if __name__ == "__main__":
-    svc.run(dev=True)
-'''
-    
-    (service_path / "main.py").write_text(main_py_content)
-    
-    # Create config.toml with data intent configuration
-    config_content = f'''# {name} Service Configuration
-name = "{name}"
-version = "0.1.0"
-port = 8000
-
-# Connection method: router, rest, hybrid, disabled
-connection_method = "hybrid"
-
-# Prerequisites - checked by 'evox sync sv'
-# This is a generic service template - add your own prerequisites as needed
-# prerequisites = ["data_intent_svc"]
-
-[health]
-endpoint = "/health"
-
-[data_intents]
-# Default data intent behaviors
-default_ttl = 300
-enable_fallback = true
-max_stale_on_error = 60
-
-[storage]
-backend = "memory"  # memory, sqlite
-'''
-    
-    (service_path / "config.toml").write_text(config_content)
-    
-    typer.echo(f"✅ Created Evox service '{name}' at {service_path.absolute()}")
-
-
-@app.command()
-def run(dev: bool = typer.Option(False, "--dev", help="Run in development mode with auto-reload")):
-    """Run the Evox platform"""
-    typer.echo("🏃 Running Evox platform...")
-    # In a full implementation, this would start the orchestrator
-    # For now, we'll just show a message
-    typer.echo("Platform would start here...")
-
-
-@app.command()
-def sync(
-    sync_type: str = typer.Argument(..., help="Type of sync to perform (db for database, sv for services)")):
-    """Sync database or services (triggers `rye sync` if dependencies changed)"""
-    if sync_type == "db":
-        typer.echo("🔄 Syncing database...")
-        # Database sync logic would go here
-        typer.echo("Database sync completed")
-    elif sync_type == "sv":
-        typer.echo("🔄 Syncing services...")
-        # Service sync logic would go here
-        typer.echo("Service sync completed (respects Rye lock file)")
-    else:
-        typer.echo(f"Invalid sync type: {sync_type}. Use 'db' for database or 'sv' for services.")
-        raise typer.Exit(code=1)
-
-
-@app.command()
-def status():
-    """Show platform status"""
-    typer.echo("📊 Evox Platform Status")
-    typer.echo("  Services: Platform initializing")
-    typer.echo("  Health: Unknown")
-    typer.echo("  Cache: Not connected")
-
-
-@app.command()
-def cache(
-    operation: str = typer.Argument(..., help="Cache operation (invalidate)"),
-    key: str = typer.Argument(None, help="Cache key to invalidate")
-):
-    """Manage cache"""
-    if operation == "invalidate":
-        if key:
-            typer.echo(f"🗑️  Invalidating cache key: {key}")
-        else:
-            typer.echo("🗑️  Invalidating all cache")
-    else:
-        typer.echo(f"Invalid cache operation: {operation}")
-
-
-@app.command()
-def test():
-    """Run tests"""
-    typer.echo("🧪 Running tests...")
-    # In a real implementation, this would run the test suite
-    typer.echo("Tests completed")
-
-
-@app.command()
-def dashboard():
-    """Open admin dashboard"""
-    typer.echo("🖥️  Opening admin dashboard...")
-    # In a real implementation, this would open a web browser
-    typer.echo("Dashboard opened")
-
-
-@app.command()
-def health(test: str = typer.Option(None, "--test", "-t", help="Run self-tests (connection, framework, services, all)")):
-    """Generate system health report using FastAPI native docs"""
-    if test:
-        run_self_test(test)
-        return
-    
-    typer.echo("🏥 Health report available via FastAPI native docs")
-    typer.echo("📋 Run your services and visit /docs or /redoc for interactive health inspection")
-    typer.echo("📝 Or use 'evox status' for terminal summary")
-
-
-def run_self_test(test_type: str):
-    """Run self-tests for the Evox framework"""
-    typer.echo(f"🧪 Running {test_type} self-test...")
-    
-    test_results = []
-    
-    if test_type == "all" or test_type == "connection":
-        # Test storage connectivity
-        storage_test = test_storage_connectivity()
-        test_results.append({"name": "Storage Connectivity", "result": storage_test})
-        
-        # Test proxy connectivity
-        proxy_test = test_proxy_connectivity()
-        test_results.append({"name": "Proxy Connectivity", "result": proxy_test})
-    
-    if test_type == "all" or test_type == "framework":
-        # Test DI lazy resolution
-        di_test = test_dependency_injection()
-        test_results.append({"name": "Dependency Injection", "result": di_test})
-        
-        # Test priority queue enforcement
-        queue_test = test_priority_queue()
-        test_results.append({"name": "Priority Queue", "result": queue_test})
-        
-        # Test dual syntax implementation
-        dual_syntax_test = test_dual_syntax()
-        test_results.append({"name": "Dual Syntax", "result": dual_syntax_test})
-        
-        # Test inject override functionality
-        inject_test = test_inject_override()
-        test_results.append({"name": "Inject Override", "result": inject_test})
-        
-        # Test proxy multi-method functionality
-        proxy_multi_test = test_proxy_multi_method()
-        test_results.append({"name": "Proxy Multi-Method", "result": proxy_multi_test})
-    
-    if test_type == "all" or test_type == "services":
-        # Test auth validation
-        auth_test = test_authentication()
-        test_results.append({"name": "Authentication", "result": auth_test})
-        
-        # Test cache fallback
-        cache_test = test_cache_fallback()
-        test_results.append({"name": "Cache Fallback", "result": cache_test})
-    
-    # Print results
-    typer.echo("\n📋 Self-Test Results:")
-    typer.echo("=" * 30)
-    
-    all_passed = True
-    for result in test_results:
-        status = "✅ PASS" if result["result"]["passed"] else "❌ FAIL"
-        typer.echo(f"{status} {result['name']}")
-        if not result["result"]["passed"]:
-            typer.echo(f"    Error: {result['result']['error']}")
-            all_passed = False
-    
-    if all_passed:
-        typer.echo("\n🎉 All self-tests passed!")
-    else:
-        typer.echo("\n⚠️  Some tests failed. Check error messages above.")
-        typer.echo("System will continue running in degraded mode with warnings.")
-
-
-def test_storage_connectivity():
-    """Test storage connectivity and intent behavior"""
-    try:
-        # In a real implementation, this would test actual storage connectivity
-        # For now, we'll simulate a successful test
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_proxy_connectivity():
-    """Test proxy internal/external routing"""
-    try:
-        # In a real implementation, this would test proxy routing
-        # For now, we'll simulate a successful test
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_dependency_injection():
-    """Test DI lazy resolution"""
-    try:
-        # In a real implementation, this would test DI resolution
-        # For now, we'll simulate a successful test
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_priority_queue():
-    """Test priority queue enforcement"""
-    try:
-        # In a real implementation, this would test queue enforcement
-        # For now, we'll simulate a successful test
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_authentication():
-    """Test auth validation"""
-    try:
-        # In a real implementation, this would test auth system
-        # For now, we'll simulate a successful test
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_cache_fallback():
-    """Test cache fallback and degraded mode"""
-    try:
-        # In a real implementation, this would test cache behavior
-        # For now, we'll simulate a successful test
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_dual_syntax():
-    """Test dual syntax implementation (function-based and class-based)"""
-    try:
-        # Test importing dual syntax components
-        from evox import service, get, post, Controller, GET, POST, Param, Body, Intent
-        
-        # Test that both syntaxes are available
-        # Function-based syntax
-        svc1 = service("test_function_svc").port(8001).build()
-        
-        # Class-based syntax
-        svc2 = service("test_class_svc").port(8002).build()
-        
-        # Test that decorators are available
-        assert hasattr(get, '__call__')
-        assert hasattr(Controller, '__call__')
-        assert hasattr(GET, '__call__')
-        assert hasattr(Intent, '__call__')
-        
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_inject_override():
-    """Test dependency injection override functionality"""
-    try:
-        # Test importing inject components
-        from evox.core import inject, override, reset_overrides
-        
-        # Test that inject components are available
-        assert hasattr(inject, 'service')
-        assert hasattr(inject, 'db')
-        assert hasattr(inject, 'config')
-        assert callable(override)
-        assert callable(reset_overrides)
-        
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def test_proxy_multi_method():
-    """Test multi-method proxy functionality"""
-    try:
-        # Test importing proxy components
-        from evox.core import proxy
-        
-        # Test that proxy components are available
-        assert hasattr(proxy, '__getattr__')
-        
-        return {"passed": True, "error": None}
-    except Exception as e:
-        return {"passed": False, "error": str(e)}
-
-
-def generate_health_report():
-    """Generate comprehensive health report data
-    
-    Returns:
-        Dict containing health report data
-    """
-    # In a real implementation, this would collect actual system metrics
-    # For now, we'll generate mock data to demonstrate the feature
-    
-    now = datetime.now()
-    
-    return {
-        "generated_at": now.isoformat(),
-        "overall_status": "green",  # green, yellow, red
-        "services": [
-            {
-                "name": "data_intent_svc",
-                "status": "up",
-                "port": 8000,
-                "connection_method": "router",
-                "health_endpoint": "/health",
-                "health_result": {"status": "healthy"},
-                "last_checked": now.isoformat()
-            },
-            {
-                "name": "user_svc",
-                "status": "up",
-                "port": 8001,
-                "connection_method": "rest",
-                "health_endpoint": "/health",
-                "health_result": {"status": "healthy", "uptime": "2h 15m"},
-                "last_checked": now.isoformat()
-            },
-            {
-                "name": "management_svc",
-                "status": "up",
-                "port": 8005,
-                "connection_method": "router",
-                "health_endpoint": "/health",
-                "health_result": {"status": "healthy", "uptime": "1h 30m"},
-                "last_checked": now.isoformat()
-            },
-            {
-                "name": "observer_svc",
-                "status": "up",
-                "port": 8006,
-                "connection_method": "rest",
-                "health_endpoint": "/health",
-                "health_result": {"status": "healthy", "uptime": "30m"},
-                "last_checked": now.isoformat()
-            }
-        ],
-        "registry_contents": [
-            {"key": "service:data_intent_svc", "value": "running on port 8000"},
-            {"key": "service:user_svc", "value": "running on port 8001"},
-            {"key": "service:management_svc", "value": "running on port 8005"},
-            {"key": "service:observer_svc", "value": "running on port 8006"},
-            {"key": "config:storage_backend", "value": "memory"}
-        ],
-        "cache_stats": {
-            "hits": 1247,
-            "misses": 89,
-            "hit_rate": 0.933,
-            "stale_served": 12,
-            "entries": 156
-        },
-        "data_intents": {
-            "active_intents": [
-                {"type": "cacheable", "count": 24, "ttl_range": "1m-24h"},
-                {"type": "strong_consistency", "count": 3, "services": ["user_svc"]},
-                {"type": "eventual_ok", "count": 17, "services": ["data_intent_svc", "user_svc"]}
-            ],
-            "backends_in_use": ["memory", "sqlite"]
-        },
-        "queue_stats": {
-            "high_priority": {"length": 0, "processed": 42, "rejections": 0},
-            "medium_priority": {"length": 2, "processed": 128, "rejections": 1},
-            "low_priority": {"length": 5, "processed": 67, "rejections": 3},
-            "active_workers": {"high": 2, "medium": 3, "low": 1}
-        },
-        "recent_errors": [
-            {
-                "timestamp": (now.replace(minute=15)).isoformat(),
-                "service": "user_svc",
-                "error": "Connection timeout",
-                "reason": "Database connection pool exhausted",
-                "resolved": True
-            }
-        ],
-        "dependency_validation": {
-            "passed": True,
-            "checks": [
-                {"name": "Python version", "status": "pass", "details": "3.11.5"},
-                {"name": "Required packages", "status": "pass", "details": "All dependencies satisfied"},
-                {"name": "Network connectivity", "status": "pass", "details": "All services reachable"}
-            ]
-        },
-        "auth": {
-            "enabled": True,
-            "internal_tokens": "active",
-            "external_auth": "JWT+RBAC",
-            "status": "secure",
-            "active_sessions": 24,
-            "failed_logins": 3,
-            "rate_limited_requests": 12,
-            "cia_classification_support": True,
-            "intent_based_access_control": True
-        },
-        "proxy": {
-            "internal_calls": 1247,
-            "external_calls": 89,
-            "internal_routing": "direct",
-            "external_routing": "HTTPS+auth",
-            "security_enforcement": "active",
-            "multi_method_endpoints": 15,
-            "context_aware_routing": "enabled"
-        },
-        "security_warnings": [
-            {"type": "info", "message": "Internal service communication secured with tokens"},
-            {"type": "info", "message": "External calls enforced with HTTPS and authentication"},
-            {"type": "warning", "message": "Default secrets should be rotated in production"},
-            {"type": "info", "message": "Rate limiting enabled for external requests"}
-        ],
-        "degraded_mode": {
-            "active": False,
-            "reason": None,
-            "since": None
-        }
-    }
-
-
-def generate_html_report(data):
-    """Generate HTML report from health data
-    
-    Args:
-        data: Health report data dictionary
-        
-    Returns:
-        String containing HTML report
-    """
-    # Status color mapping
-    status_colors = {
-        "green": "#4CAF50",
-        "yellow": "#FFC107",
-        "red": "#F44336"
-    }
-    
-    # Generate HTML content
-    html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Evox System Health Report</title>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }}
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }}
-        .header {{
-            background: #2c3e50;
-            color: white;
-            padding: 20px;
-            text-align: center;
-        }}
-        .status-badge {{
-            display: inline-block;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: bold;
-            background-color: {status_colors.get(data['overall_status'], '#9E9E9E')};
-        }}
-        .section {{
-            padding: 20px;
-            border-bottom: 1px solid #eee;
-        }}
-        .section:last-child {{
-            border-bottom: none;
-        }}
-        .section-title {{
-            color: #2c3e50;
-            margin-top: 0;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #eee;
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 15px 0;
-        }}
-        th, td {{
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }}
-        th {{
-            background-color: #f8f9fa;
-            font-weight: 600;
-        }}
-        tr:hover {{
-            background-color: #f5f5f5;
-        }}
-        .collapsible {{
-            background-color: #f1f1f1;
-            color: #444;
-            cursor: pointer;
-            padding: 10px;
-            width: 100%;
-            border: none;
-            text-align: left;
-            outline: none;
-            font-size: 15px;
-            margin: 5px 0;
-        }}
-        .active, .collapsible:hover {{
-            background-color: #ccc;
-        }}
-        .content {{
-            padding: 0 18px;
-            display: none;
-            overflow: hidden;
-            background-color: #f9f9f9;
-        }}
-        .metric-card {{
-            background: #f8f9fa;
-            border-radius: 6px;
-            padding: 15px;
-            margin: 10px 0;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }}
-        .metric-value {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #2c3e50;
-        }}
-        .metric-label {{
-            font-size: 14px;
-            color: #666;
-        }}
-        .error {{
-            background-color: #ffebee;
-            border-left: 4px solid #f44336;
-            padding: 15px;
-            margin: 10px 0;
-        }}
-        .warning {{
-            background-color: #fff3e0;
-            border-left: 4px solid #ff9800;
-            padding: 15px;
-            margin: 10px 0;
-        }}
-        .success {{
-            background-color: #e8f5e9;
-            border-left: 4px solid #4caf50;
-            padding: 15px;
-            margin: 10px 0;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Evox System Health Report</h1>
-            <p>Generated at: {data['generated_at']}</p>
-            <span class="status-badge">Overall Status: {data['overall_status'].upper()}</span>
-        </div>
-        
-        <!-- Services Section -->
-        <div class="section">
-            <h2 class="section-title">Service Status</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Service</th>
-                        <th>Status</th>
-                        <th>Port</th>
-                        <th>Connection</th>
-                        <th>Health Endpoint</th>
-                        <th>Last Checked</th>
-                    </tr>
-                </thead>
-                <tbody>
-    """
-    
-    # Add service rows
-    for service in data['services']:
-        status_color = "green" if service['status'] == 'up' else "red"
-        html += f"""
-                    <tr>
-                        <td>{service['name']}</td>
-                        <td><span style="color: {status_colors.get(status_color, '#9E9E9E')}; font-weight: bold;">{service['status'].upper()}</span></td>
-                        <td>{service['port']}</td>
-                        <td>{service['connection_method']}</td>
-                        <td>{service['health_endpoint']}</td>
-                        <td>{service['last_checked'][:19]}</td>
-                    </tr>
-        """
-    
-    html += """
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- Registry Contents -->
-        <div class="section">
-            <h2 class="section-title">Registry Contents</h2>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Key</th>
-                        <th>Value</th>
-                    </tr>
-                </thead>
-                <tbody>
-    """
-    
-    # Add registry rows
-    for item in data['registry_contents']:
-        html += f"""
-                    <tr>
-                        <td>{item['key']}</td>
-                        <td>{item['value']}</td>
-                    </tr>
-        """
-    
-    html += """
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- Cache Stats -->
-        <div class="section">
-            <h2 class="section-title">Cache Statistics</h2>
-            <div style="display: flex; flex-wrap: wrap;">
-                <div class="metric-card">
-                    <div class="metric-value">{data['cache_stats']['hits']}</div>
-                    <div class="metric-label">Cache Hits</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['cache_stats']['misses']}</div>
-                    <div class="metric-label">Cache Misses</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['cache_stats']['hit_rate']:.2%}</div>
-                    <div class="metric-label">Hit Rate</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['cache_stats']['stale_served']}</div>
-                    <div class="metric-label">Stale Data Served</div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Data Intents -->
-        <div class="section">
-            <h2 class="section-title">Data Intent Summary</h2>
-            <button class="collapsible">Active Data Intents</button>
-            <div class="content">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Type</th>
-                            <th>Count</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-    """
-    
-    # Add data intent rows
-    for intent in data['data_intents']['active_intents']:
-        services = ", ".join(intent.get('services', [])) if intent.get('services') else "Various"
-        html += f"""
-                        <tr>
-                            <td>{intent['type']}</td>
-                            <td>{intent['count']}</td>
-                            <td>{intent.get('ttl_range', services)}</td>
-                        </tr>
-        """
-    
-    html += f"""
-                    </tbody>
-                </table>
-            </div>
-            <div class="metric-card">
-                <div class="metric-value">{', '.join(data['data_intents']['backends_in_use'])}</div>
-                <div class="metric-label">Backends in Use</div>
-            </div>
-        </div>
-        
-        <!-- Queue Stats -->
-        <div class="section">
-            <h2 class="section-title">Priority Queue Statistics</h2>
-            <div style="display: flex; flex-wrap: wrap;">
-                <div class="metric-card">
-                    <div class="metric-value">{data['queue_stats']['high_priority']['length']}</div>
-                    <div class="metric-label">High Priority Queue Length</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['queue_stats']['medium_priority']['length']}</div>
-                    <div class="metric-label">Medium Priority Queue Length</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['queue_stats']['low_priority']['length']}</div>
-                    <div class="metric-label">Low Priority Queue Length</div>
-                </div>
-            </div>
-            <div style="display: flex; flex-wrap: wrap; margin-top: 15px;">
-                <div class="metric-card">
-                    <div class="metric-value">{data['queue_stats']['high_priority']['rejections']}</div>
-                    <div class="metric-label">High Priority Rejections</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['queue_stats']['medium_priority']['rejections']}</div>
-                    <div class="metric-label">Medium Priority Rejections</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['queue_stats']['low_priority']['rejections']}</div>
-                    <div class="metric-label">Low Priority Rejections</div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Authentication Status -->
-        <div class="section">
-            <h2 class="section-title">Authentication Status</h2>
-            <div style="display: flex; flex-wrap: wrap;">
-                <div class="metric-card">
-                    <div class="metric-value">{data['auth']['status'].upper()}</div>
-                    <div class="metric-label">Security Status</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['auth']['internal_tokens']}</div>
-                    <div class="metric-label">Internal Tokens</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['auth']['external_auth']}</div>
-                    <div class="metric-label">External Auth</div>
-                </div>
-            </div>
-            <div style="margin-top: 15px;">
-                <p><strong>Active Sessions:</strong> {data['auth']['active_sessions']}</p>
-                <p><strong>Failed Logins:</strong> {data['auth']['failed_logins']}</p>
-                <p><strong>Rate Limited Requests:</strong> {data['auth']['rate_limited_requests']}</p>
-                <p><strong>CIA Classification Support:</strong> {data['auth']['cia_classification_support']}</p>
-                <p><strong>Intent-Based Access Control:</strong> {data['auth']['intent_based_access_control']}</p>
-            </div>
-        </div>
-        
-        <!-- Proxy Statistics -->
-        <div class="section">
-            <h2 class="section-title">Proxy Communication</h2>
-            <div style="display: flex; flex-wrap: wrap;">
-                <div class="metric-card">
-                    <div class="metric-value">{data['proxy']['internal_calls']}</div>
-                    <div class="metric-label">Internal Calls</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['proxy']['external_calls']}</div>
-                    <div class="metric-label">External Calls</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{data['proxy']['multi_method_endpoints']}</div>
-                    <div class="metric-label">Multi-Method Endpoints</div>
-                </div>
-            </div>
-            <div style="margin-top: 15px;">
-                <p><strong>Internal Routing:</strong> {data['proxy']['internal_routing']}</p>
-                <p><strong>External Routing:</strong> {data['proxy']['external_routing']}</p>
-                <p><strong>Security Enforcement:</strong> {data['proxy']['security_enforcement']}</p>
-                <p><strong>Context Aware Routing:</strong> {data['proxy']['context_aware_routing']}</p>
-            </div>
-        </div>
-        
-        <!-- Degraded Mode Status -->
-        <div class="section">
-            <h2 class="section-title">Degraded Mode Status</h2>
-            <div class="metric-card">
-                <div class="metric-value">{"ACTIVE" if data['degraded_mode']['active'] else "INACTIVE"}</div>
-                <div class="metric-label">Degraded Mode</div>
-            </div>
-            """
-    
-    if data['degraded_mode']['active']:
-        html += f"""
-            <div class="warning">
-                <strong>Degraded Since:</strong> {data['degraded_mode']['since']}<br>
-                <strong>Reason:</strong> {data['degraded_mode']['reason']}
-            </div>
-        """
-    
-    html += """
-        </div>
-        
-        <!-- Recent Errors -->
-        <div class="section">
-            <h2 class="section-title">Recent Errors & Warnings</h2>
-    """
-    
-    # Add error entries
-    if data['recent_errors']:
-        for error in data['recent_errors']:
-            resolved_class = "success" if error.get('resolved', False) else "error"
-            resolved_text = "RESOLVED" if error.get('resolved', False) else "ACTIVE"
-            html += f"""
-            <div class="{resolved_class}">
-                <strong>{error['timestamp'][:19]}</strong> - {error['service']}<br>
-                <strong>Error:</strong> {error['error']}<br>
-                <strong>Reason:</strong> {error['reason']}<br>
-                <strong>Status:</strong> {resolved_text}
-            </div>
-            """
-    else:
-        html += """
-            <div class="success">
-                No recent errors detected
-            </div>
-        """
-    
-    html += """
-        </div>
-        
-        <!-- Security Warnings -->
-        <div class="section">
-            <h2 class="section-title">Security Warnings</h2>
-    """
-    
-    # Add security warnings
-    security_warnings = data.get('security_warnings', [])
-    if security_warnings:
-        for warning in security_warnings:
-            warning_class = "warning" if warning['type'] == 'warning' else "success"
-            html += f"""
-            <div class="{warning_class}">
-                <strong>{warning['type'].upper()}:</strong> {warning['message']}
-            </div>
-            """
-    else:
-        html += """
-            <div class="success">
-                <strong>No security warnings</strong>
-            </div>
-        """
-    
-    html += """
-        </div>
-        
-        <!-- Dependency Validation -->
-        <div class="section">
-            <h2 class="section-title">Dependency Validation</h2>
-    """
-    
-    # Add dependency validation results
-    if data['dependency_validation']['passed']:
-        html += """
-            <div class="success">
-                <strong>All dependency checks passed</strong>
-        """
-    else:
-        html += """
-            <div class="error">
-                <strong>Dependency validation failed</strong>
-        """
-    
-    html += """
-                <ul>
-    """
-    
-    # Add individual checks
-    for check in data['dependency_validation']['checks']:
-        status_icon = "✓" if check['status'] == 'pass' else "✗"
-        html += f"""
-                    <li>{status_icon} {check['name']}: {check['details']}</li>
-        """
-    
-    html += """
-                </ul>
-            </div>
-        </div>
-        
-        <div class="section" style="text-align: center; background: #f8f9fa;">
-            <p><em>Report generated by Evox v0.0.1-alpha - Data-Intent-Aware Framework</em></p>
-        </div>
-    
-    </div>
-    
-    <script>
-        // Collapsible sections
-        var coll = document.getElementsByClassName("collapsible");
-        var i;
-        
-        for (i = 0; i < coll.length; i++) {{
-            coll[i].addEventListener("click", function() {{
-                this.classList.toggle("active");
-                var content = this.nextElementSibling;
-                if (content.style.display === "block") {{
-                    content.style.display = "none";
-                }} else {{
-                    content.style.display = "block";
-                }}
-            }});
-        }}
-    </script>
-</body>
-</html>
-    """
-    
-    return html
-
-
-def print_health_summary(data):
-    """Print a text summary of the health report
-    
-    Args:
-        data: Health report data dictionary
-    """
-    typer.echo("\n🏥 Evox System Health Summary")
-    typer.echo("=" * 40)
-    typer.echo(f"Generated at: {data['generated_at']}")
-    typer.echo(f"Overall Status: {data['overall_status'].upper()}")
-    
-    typer.echo("\n🔌 Service Status:")
-    for service in data['services']:
-        status_indicator = "✅" if service['status'] == 'up' else "❌"
-        typer.echo(f"  {status_indicator} {service['name']} - Port {service['port']} - {service['status'].upper()}")
-
+    app()

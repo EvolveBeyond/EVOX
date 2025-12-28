@@ -8,7 +8,7 @@ It operates as a pure observer-coordinator with no mandatory control functions.
 import os
 import importlib
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any
 from fastapi import FastAPI
 import uvicorn
 
@@ -17,8 +17,8 @@ class Orchestrator:
     """Evox service orchestrator"""
     
     def __init__(self):
-        self.services: Dict[str, Any] = {}
-        self.app: Optional[FastAPI] = None
+        self.services: dict[str, Any] = {}
+        self.app: FastAPI | None = None
     
     async def initialize(self):
         """Initialize the orchestrator with generic platform app"""

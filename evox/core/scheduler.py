@@ -10,7 +10,7 @@ This module provides a heap-based priority scheduling system that ensures:
 import asyncio
 import heapq
 import time
-from typing import Any, List, Callable, Optional, Tuple
+from typing import Any, Callable
 from enum import Enum
 from dataclasses import dataclass
 from collections import defaultdict
@@ -70,7 +70,7 @@ class CallScheduler:
         }
         self._task_counter = 0
         # Single heap-based priority queue for all priorities
-        self._task_heap: List[ScheduledTask] = []
+        self._task_heap: list[ScheduledTask] = []
         self._task_dict: dict = {}  # Track tasks by ID
         self._lock = asyncio.Lock()  # Protect heap operations
         self._stats = defaultdict(int)  # Track execution stats
@@ -162,7 +162,7 @@ class CallScheduler:
     async def parallel(self, *coros, 
                       priority: Priority = Priority.MEDIUM,
                       policy: Policy = Policy.PARTIAL_OK,
-                      concurrency: int = 5):
+                      concurrency: int = 5) -> list[Any]:
         """
         Execute multiple coroutines concurrently with priority and policy control
         
@@ -173,7 +173,7 @@ class CallScheduler:
             concurrency: Maximum concurrent executions
             
         Returns:
-            List of results
+            list of results
         """
         # Schedule all tasks with the same priority
         task_ids = []

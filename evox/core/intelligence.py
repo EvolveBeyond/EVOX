@@ -14,11 +14,31 @@ Design Philosophy:
 - Developer-friendly API: Clean, intuitive interfaces for common operations
 """
 
-from typing import Any, Dict, Optional, Union
+from typing import Any
 from pydantic import BaseModel
 import psutil
 import asyncio
 from .queue import get_priority_queue, PriorityLevel
+from .intents import extract_intents, model_intent_score, Intent, get_intent_registry
+from enum import Enum
+import logging
+
+
+class SystemStatus(str, Enum):
+    """
+    System status enum for resource monitoring.
+    
+    Rationale: Provides clear, standardized system health states that can be used
+    by the framework to make intelligent decisions about request handling.
+    """
+    GREEN = "green"
+    """System is healthy and operating normally"""
+    
+    YELLOW = "yellow"
+    """System is under moderate stress, consider load shedding"""
+    
+    RED = "red"
+    """System is under critical stress, only critical requests allowed"""
 
 
 class EnvironmentalIntelligence:
@@ -43,7 +63,7 @@ class EnvironmentalIntelligence:
         self._requester_profiles = {}
         self._system_monitor = SystemMonitor()
     
-    def register_schema(self, schema_class: type, metadata: Dict[str, Any]):
+    def register_schema(self, schema_class: type, metadata: dict[str, Any]):
         """
         Register a schema with metadata for automatic understanding
         
@@ -89,7 +109,7 @@ class EnvironmentalIntelligence:
         # Default to medium importance
         return "medium"
     
-    def analyze_requester_context(self, headers: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    def analyze_requester_context(self, headers: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
         """
         Analyze requester context to determine appropriate handling
         
@@ -140,6 +160,19 @@ class EnvironmentalIntelligence:
             Load factor between 0.0 (idle) and 1.0 (maximum load)
         """
         return self._system_monitor.get_load_factor()
+    
+    def get_current_system_status(self) -> SystemStatus:
+        """
+        Get the current system status based on resource utilization.
+        
+        Rationale:
+            Provides a high-level system health status that can be used by
+            other components to make intelligent decisions about request handling.
+        
+        Returns:
+            SystemStatus enum value indicating current system health
+        """
+        return self._system_monitor.get_system_status()
 
 
 class SystemMonitor:
@@ -153,7 +186,12 @@ class SystemMonitor:
     def __init__(self):
         self._last_check = 0
         self._cached_load = 0.0
+        self._cached_status = SystemStatus.GREEN
         self._cache_duration = 1.0  # Cache for 1 second
+        self._cpu_threshold_yellow = 80.0  # CPU % for yellow status
+        self._cpu_threshold_red = 95.0     # CPU % for red status
+        self._memory_threshold_yellow = 80.0  # Memory % for yellow status
+        self._memory_threshold_red = 95.0     # Memory % for red status
     
     def get_load_factor(self) -> float:
         """
@@ -182,6 +220,42 @@ class SystemMonitor:
         self._last_check = current_time
         
         return load_factor
+    
+    def get_system_status(self) -> SystemStatus:
+        """
+        Get the current system status based on resource utilization.
+        
+        Rationale:
+            Provides a simple enum-based status that can be used by other
+            components to make decisions about request handling and resource allocation.
+        
+        Returns:
+            SystemStatus enum value
+        """
+        current_time = asyncio.get_event_loop().time()
+        if current_time - self._last_check < self._cache_duration:
+            return self._cached_status
+        
+        # Get current system metrics
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory_percent = psutil.virtual_memory().percent
+        
+        # Determine status based on thresholds
+        max_usage = max(cpu_percent, memory_percent)
+        
+        if max_usage >= self._memory_threshold_red or max_usage >= self._cpu_threshold_red:
+            status = SystemStatus.RED
+        elif max_usage >= self._memory_threshold_yellow or max_usage >= self._cpu_threshold_yellow:
+            status = SystemStatus.YELLOW
+        else:
+            status = SystemStatus.GREEN
+        
+        # Update cache
+        self._cached_status = status
+        self._cached_load = max_usage / 100.0  # Also update load factor
+        self._last_check = current_time
+        
+        return status
 
 
 # Global environmental intelligence instance
@@ -196,6 +270,20 @@ def get_environmental_intelligence() -> EnvironmentalIntelligence:
         EnvironmentalIntelligence instance
     """
     return _env_intelligence
+
+
+def get_current_context_status() -> SystemStatus:
+    """
+    Get the current system status based on resource utilization.
+    
+    Rationale:
+        Provides a simple function for other components to check the
+        current system health status and make intelligent decisions.
+    
+    Returns:
+        SystemStatus enum value indicating current system health
+    """
+    return _env_intelligence.get_current_system_status()
 
 
 def auto_adjust_concurrency():
@@ -217,7 +305,7 @@ def auto_adjust_concurrency():
 
 
 # Convenience functions for common intelligence operations
-def understand_data_importance(data: Union[BaseModel, Dict[str, Any]]) -> str:
+def understand_data_importance(data: BaseModel | dict[str, Any]) -> str:
     """
     Understand the importance of data automatically
     
@@ -246,7 +334,7 @@ def understand_data_importance(data: Union[BaseModel, Dict[str, Any]]) -> str:
     return "medium"
 
 
-def understand_requester_context(headers: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+def understand_requester_context(headers: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     """
     Understand requester context automatically
     
@@ -261,11 +349,32 @@ def understand_requester_context(headers: Dict[str, Any], payload: Dict[str, Any
     return env_intel.analyze_requester_context(headers, payload)
 
 
+def analyze_schema_intent(schema: type[BaseModel]) -> float:
+    """
+    Analyze the declared intents of a schema and calculate an importance score.
+    
+    Rationale:
+        This function enables the framework to understand the developer's intent
+        for data handling and apply appropriate processing strategies based on
+        the declared intents (critical, sensitive, ephemeral, lazy).
+    
+    Args:
+        schema: The Pydantic model class to analyze
+        
+    Returns:
+        A numerical score representing the overall importance of the schema
+    """
+    return model_intent_score(schema)
+
+
 # Export public API
 __all__ = [
     "EnvironmentalIntelligence",
     "get_environmental_intelligence",
     "auto_adjust_concurrency",
     "understand_data_importance",
-    "understand_requester_context"
+    "understand_requester_context",
+    "analyze_schema_intent",
+    "SystemStatus",
+    "get_current_context_status"
 ]

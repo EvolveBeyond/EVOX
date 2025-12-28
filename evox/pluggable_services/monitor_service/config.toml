@@ -1,0 +1,24 @@
+# Monitoring Service Configuration
+
+[service]
+name = "monitor-service"
+port = 8007
+capabilities = ["metrics", "monitoring", "system-telemetry", "alerting"]
+prerequisites = []
+
+[storage]
+backend = "memory"
+
+[caching]
+default_ttl = 300
+enable_fallback = true
+
+[monitoring]
+collection_interval = 10
+retention_count = 1000
+enable_alerting = true
+
+[metrics]
+cpu_threshold = 80.0
+memory_threshold = 80.0
+response_time_threshold = 1.0

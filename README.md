@@ -1,6 +1,6 @@
-# Evox - Modern Python Microservices Framework (v0.0.5-alpha)
+# EVOX: The Smart companion for Python 3.13+ Services
 
-Evox is a modern microservices framework for Python that makes building scalable backend services simple and intelligent.
+EVOX is a next-generation, intent-aware service framework that makes building resilient, scalable backend services simple and intelligent. Built for Python 3.13+ with a focus on multi-layered resilience and automatic adaptation.
 
 ## 🚀 Quick Start
 
@@ -12,155 +12,157 @@ rye add evox
 
 # Or using pip
 pip install evox
+
+# Install different tiers:
+pip install evox[nano]      # Core + In-Memory Cache
+pip install evox[mini]      # Nano + CLI + File Storage  
+pip install evox[standard]  # Mini + SQLite/Postgres + Basic Auth
+pip install evox[full]      # All providers (Redis, Advanced Monitoring, etc.)
 ```
 
 ### Create Your First Service
 
 ```bash
 # Create a new project
-evox new pj my_project
+evox new project my_project
 cd my_project
 
 # Create a service
-evox new sv user_service
+evox new service user_service
 
 # Run in development mode
-evox run --dev
+evox maintenance sync
+evox maintenance status
 ```
+
+## 🔄 Nested CLI Commands
+
+EVOX features an intuitive nested command structure:
+
+### Create Commands
+```bash
+evox new project <name>     # Create a new project
+evox new service <name>     # Create a new service
+evox new plugin <name>      # Create a new plugin template
+evox new db <name>          # Add database configuration
+```
+
+### Maintenance Commands
+```bash
+evox maintenance sync       # Sync dependencies via Rye
+evox maintenance health     # Run system-wide health checks
+evox maintenance status     # Overview of services, plugins, and system load
+```
+
+## 🏗️ Professional Blue-Prints
+
+EVOX provides three ready-to-use blueprints for different project scales:
+
+### 1. Nano Project (`nano_project/`)
+Perfect for fast, single-file microservices:
+- Zero-boilerplate service creation
+- Intent-aware Pydantic models
+- Multi-layered caching system
+- Health-aware dependency injection
+
+### 2. Enterprise System (`enterprise_system/`)
+For multi-service, class-based architecture:
+- Professional folder layout (services, providers, shared models)
+- BaseProvider pattern implementation
+- Service-to-service communication via ServiceRegistry
+- Multi-layered cache with Redis -> In-Memory fallback
+
+### 3. Smart Gateway (`smart_gateway/`)
+For adaptive, intelligence-aware systems:
+- Environmental intelligence with SystemMonitor
+- Adaptive concurrency adjustment
+- Priority queues for CRITICAL vs LOW requests
+- Resource protection mechanisms
 
 ## 🔄 Dual Syntax Support
 
-Evox supports two ways to build services:
+EVOX supports two ways to build services:
 
 ### Function-Based Syntax (Simple & Familiar)
 
 ```python
 from evox import service, get, post, delete, Param, Body
+from typing import Dict, Any
 
 # Create service
 svc = service("user-service").port(8000).build()
 
 # Define endpoints
 @get("/users/{user_id:int}")
-async def get_user(user_id: int = Param(int)):
+async def get_user(user_id: int = Param(int)) -> Dict[str, str | int]:
     return {"id": user_id, "name": f"User {user_id}"}
 
 @post("/users")
-async def create_user(user_data: dict = Body(dict)):
+async def create_user(user_data: Dict[str, Any] = Body(dict)) -> Dict[str, str]:
     return {"status": "created", "user": user_data}
-
-@delete("/users/{user_id:int}")
-async def delete_user(user_id: int = Param(int)):
-    return {"status": "deleted", "user_id": user_id}
-
-if __name__ == "__main__":
-    svc.run(dev=True)
 ```
 
 ### Class-Based Syntax (Organized & Scalable)
 
 ```python
 from evox import service, Controller, GET, POST, DELETE, Param, Body
+from typing import Dict, Any
 
 # Create service
 svc = service("user-service").port(8000).build()
 
-@Controller("/users")
+@Controller("/api/v1/users", tags=["users"])
 class UserController:
     @GET("/{user_id:int}")
-    async def get_user(self, user_id: int = Param(int)):
+    async def get_user(self, user_id: int = Param(int)) -> Dict[str, str | int]:
         return {"id": user_id, "name": f"User {user_id}"}
     
     @POST("/")
-    async def create_user(self, user_data: dict = Body(dict)):
+    async def create_user(self, user_data: Dict[str, Any] = Body(dict)) -> Dict[str, str]:
         return {"status": "created", "user": user_data}
-    
-    @DELETE("/{user_id:int}")
-    async def delete_user(self, user_id: int = Param(int)):
-        return {"status": "deleted", "user_id": user_id}
-
-if __name__ == "__main__":
-    svc.run(dev=True)
 ```
 
-## 💉 Type-Safe Lazy Dependency Injection
+## 🔧 Type-Safe Architecture
 
-Evox provides clean, lazy dependency injection with full type safety:
+EVOX provides full type safety with modern Python features:
+
+### Type-Safe Dependency Injection
 
 ```python
-from evox import service, get, inject
-from evox.core.inject import inject_dependency
-from pydantic import BaseModel
+from evox import inject
+from evox.core.inject import HealthAwareInject
+from typing import Dict, Any
 
-class DatabaseConfig(BaseModel):
-    host: str
-    port: int
+# Type-safe dependency injection with health awareness
+class DatabaseService:
+    async def get_user(self, user_id: str) -> Dict[str, str]:
+        return {"id": user_id, "name": f"User {user_id}"}
 
-# Type-safe injection
-db_config = inject(DatabaseConfig)  # Lazy - only loads when accessed
-user_db = inject('db')             # String-based injection
-auth_svc = inject.service('auth')  # Service proxy injection
+@get("/users/{user_id}")
+async def get_user(user_id: str = Param(str)) -> Dict[str, str]:
+    # Health-aware injection with full IDE support
+    db: DatabaseService = inject(DatabaseService)
+    return await db.get_user(user_id)
 
-@get("/users")
-async def get_users():
-    # Dependencies are resolved automatically
-    config = db_config  # Lazy loading happens here
-    users = await user_db.get_all_users()
-    return {"users": users}
+# Alternative syntax with explicit type parameter
+# db = HealthAwareInject[DatabaseService]()
 ```
 
-## 🧠 Environmental Intelligence
+## 🌍 Environmental Intelligence
 
-Evox understands your application context automatically:
+EVOX understands your data and context automatically:
 
-### Automatic Data Understanding
+### Multi-Layered Resilience
+EVOX implements a sophisticated caching system with priority fallback:
+- **User-defined cache** (highest priority)
+- **In-Memory cache** (fast access)
+- **File/DB-based cache** (persistent storage)
 
-```python
-from evox import service, post, Body
-from pydantic import BaseModel
-
-class CriticalRequest(BaseModel):
-    data: str
-    priority: str = "high"  # Automatically gets high priority
-
-svc = service("smart-service").build()
-
-@post("/process")
-async def process_data(request: CriticalRequest = Body(CriticalRequest)):
-    # Framework automatically prioritizes based on schema
-    return {"processed": True}
-```
-
-### Context-Aware Processing
-
-```python
-from evox import service, get, Query
-from evox.core.intelligence import understand_requester_context
-
-svc = service("adaptive-service").build()
-
-@get("/data")
-async def get_data(user_type: str = Query(str, "regular")):
-    # Framework adapts based on requester context
-    headers = {"X-Requester-Type": user_type}
-    context = understand_requester_context(headers, {})
-    
-    if context["priority"] == "high":
-        # Fast processing for important users
-        return {"data": "premium_content"}
-    else:
-        # Standard processing for regular users
-        return {"data": "standard_content"}
-```
-
-### Resource-Aware Concurrency
-
-```python
-from evox.core.intelligence import auto_adjust_concurrency
-
-# Automatically adjust based on system load
-auto_adjust_concurrency()
-```
+### Intent-Aware Architecture
+The framework automatically adapts based on your declared intentions:
+- Data importance understanding from schema
+- Context-aware processing
+- Resource-aware concurrency adjustment
 
 ## ⚡ Intelligent Priority Management
 
@@ -185,59 +187,38 @@ async def process_request(request: HighPrioritySchema = Body(HighPrioritySchema)
 # X-Priority: high in request headers
 ```
 
-## 🛠️ CLI Commands
+## 🏗️ Quick Start from Blue-Prints
+
+Check out the professional blue-prints in `evox/examples/`:
+- `nano_project/` - Fast, single-file microservices
+- `enterprise_system/` - Multi-service, class-based architecture
+- `smart_gateway/` - Intelligence-driven adaptive systems
+- `beginner_start.py` - Beginner-friendly introduction
+
+## 🚀 New to EVOX? Start with `examples/beginner_start.py`
+
+If you're new to EVOX, start with our beginner-friendly example that shows the absolute simplest way to get started:
 
 ```bash
-# Project management
-evox new pj my_project    # Create new project
-evox new sv my_service    # Create new service
+# Navigate to the beginner example
+cd evox/examples/
 
-# Development
-evox run --dev           # Run in development mode
-evox test                # Run tests
-
-# Monitoring
-evox health              # Generate health report
-evox status              # Show platform status
+# Run the beginner example
+python beginner_start.py
 ```
 
-## 🔧 Key Features
+Features:
+- 5-line functional service example
+- 10-line class-based service example
+- No configuration needed
+- Direct execution with default fallback values
+- Demonstrates EVOX's flexibility from simple to complex
 
-### 🎯 Data-Intent-Aware Architecture
-- System infers storage/cache/consistency behavior from explicit data intents
-- No mandatory DB/ORM/Redis - defaults to in-memory (ephemeral, TTL-aware)
-- Unified `data_io` API: `data_io.read(intent, key)` and `data_io.write(intent, obj/data)`
-
-### 🔐 Robust Authentication
-- JWT + Role-Based Access Control
-- Automatic detection of internal vs external calls
-- Intent-integrated security
-
-### ⚡ Priority-Aware Concurrency
-- Strict priority enforcement (HIGH > MEDIUM > LOW)
-- Concurrency caps prevent resource exhaustion
-- Fair scheduling within same priority levels
-
-### 🧼 Clean & Minimal
-- Zero external dependencies by default
-- SQLite optional lightweight fallback
-- ORM completely optional
-- Heavy consistency/cache handled transparently
-
-## 📚 Examples
-
-Check out the examples in `evox/examples/`:
-- `template_example.py` - Basic service patterns
-- `dual_syntax_showcase.py` - Both syntax approaches
-- `intelligence_template.py` - Environmental intelligence features
+EVOX adapts to your skill level: from simple functions to complex enterprise systems.
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a pull request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed contribution guidelines.
 
 ## 📄 License
 

@@ -1,0 +1,18 @@
+# Data Intent Service Configuration
+
+[service]
+name = "data-intent-service"
+port = 8004
+
+[storage]
+backend = "memory"
+
+[caching]
+default_ttl = 300
+enable_fallback = true
+
+[data_intents]
+# Default data intent behaviors
+default_ttl = 300
+enable_fallback = true
+max_stale_on_error = 60

@@ -1,3 +1,3 @@
 """
-Evox CLI - Command line interface for the Evox framework
+CLI package for EVOX Framework
 """

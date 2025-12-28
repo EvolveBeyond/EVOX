@@ -5,7 +5,7 @@ This module provides configuration management for the Evox framework,
 including default settings for priority queues, caching, and other features.
 """
 
-from typing import Dict, Any
+from typing import Any
 import tomli
 import os
 from pathlib import Path
@@ -75,9 +75,9 @@ class ConfigManager:
             except Exception as e:
                 print(f"Warning: Could not load config.toml: {e}")
     
-    def _merge_config(self, new_config: Dict[str, Any]):
+    def _merge_config(self, new_config: dict[str, Any]):
         """Merge new configuration with existing configuration"""
-        def merge_dict(base: Dict, update: Dict):
+        def merge_dict(base: dict, update: dict):
             for key, value in update.items():
                 if key in base and isinstance(base[key], dict) and isinstance(value, dict):
                     merge_dict(base[key], value)

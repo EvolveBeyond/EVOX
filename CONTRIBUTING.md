@@ -1,6 +1,6 @@
-# Contributing to Evox
+# Contributing to EVOX v0.1.2-beta
 
-Welcome! We're excited that you're interested in contributing to Evox. This document provides guidelines and information to help you get started.
+Welcome! We're excited that you're interested in contributing to EVOX. This document provides guidelines and information to help you get started with the **v0.1.2-beta** release, optimized for **Python 3.13+**.
 
 ## Code of Conduct
 
@@ -15,7 +15,7 @@ Before reporting an issue, please check if it has already been reported. When re
 1. **Use a clear and descriptive title**
 2. **Provide a detailed description** of the problem
 3. **Include steps to reproduce** the issue
-4. **Specify your environment** (OS, Python version, Evox version)
+4. **Specify your environment** (OS, Python version, EVOX version)
 5. **Include relevant code snippets** or configuration files
 
 ### Suggesting Enhancements
@@ -46,30 +46,51 @@ We welcome ideas for new features! When suggesting an enhancement:
 git clone https://github.com/your-username/evox.git
 cd evox
 
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Install Rye (if not already installed)
+curl -sSf https://rye.astral.sh/get | bash
 
-# Install in development mode
-pip install -e .
+# Sync dependencies with Rye
+rye sync
 
-# Install development dependencies
-pip install -r requirements-dev.txt
+# Activate the virtual environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
+
+#### Rye-First Workflow
+
+EVOX follows a **Rye-first** development workflow:
+
+1. **Sync dependencies**: `rye sync` - Install all dependencies
+2. **Run tests**: `rye test` or `rye run pytest` - Execute test suite
+3. **Build package**: `rye build` - Create distribution packages
+4. **Run commands**: `rye run <command>` - Execute development commands
+
+#### Architecture Philosophy: Core-CLI Separation
+
+EVOX follows the "Core-as-Brain, CLI-as-Shell" principle:
+- **All business logic** resides in `evox.core` (e.g., `project_manager`, `plugin_manager`)
+- **CLI only handles** file I/O and command routing via method calls to the core
+- **CLI should never** contain internal logic for dependency resolution or plugin states
+- **Core managers** implement all functionality and are called by CLI commands
 
 #### Coding Standards
 
 - Follow PEP 8 style guide
 - Write clear, descriptive docstrings for all public APIs
+- **Mandatory:** Use Python 3.13+ idioms:
+  - Use `|` for union types (PEP 604): `str | int` instead of `Union[str, int]`
+  - Use `X | None` instead of `Optional[X]`
+  - Apply modern Type Parameter syntax where applicable
 - Include type hints where appropriate
 - Keep functions focused and small
 - Write comprehensive comments for complex logic
+- **Required:** All new `pluggable_services` must include comprehensive docstrings
 
 #### Testing
 
 - Write unit tests for new functionality
 - Ensure all existing tests pass
-- Run tests with: `pytest tests/`
+- Run tests with: `rye test` or `rye run pytest`
 
 ### Pull Request Process
 
@@ -114,15 +135,18 @@ Looking for a good way to start contributing? Check out issues labeled "good fir
 - Have clear acceptance criteria
 - Are suitable for newcomers
 
+**New to EVOX?** Start with issues tagged with `python-3.13`, `typing-enhancement`, or `docstring-needed`.
+
 ## Architecture Overview
 
 ### Core Components
 
-1. **Service Builder** - Fluent API for creating services
-2. **Data IO** - Intent-aware unified data interface
-3. **Service Proxy** - Intelligent inter-service communication
-4. **Orchestrator** - Service discovery and management
-5. **CLI** - Command-line interface
+1. **ProjectManager** - Project structure and configuration management
+2. **PluginManager** - Pluggable service discovery and loading
+3. **Lifecycle** - Event bus and lifecycle hook system
+4. **Data IO** - Intent-aware unified data interface
+5. **Service Registry** - Service discovery and communication
+6. **CLI** - Command-line interface
 
 ### Design Principles
 
@@ -174,8 +198,8 @@ If you have any questions about contributing, feel free to:
 2. Ask in relevant issues
 3. Contact maintainers directly
 
-Thank you for contributing to Evox! 🙏
+Thank you for contributing to EVOX! 🙏
 
 ---
 
-*Evox is in early alpha - not yet beta. Expect breaking changes. Ideas and implementation are experimental and evolving.*
+*EVOX is in Beta. Built for resilience and production-grade intelligence. The framework is stable for production use with comprehensive documentation and examples.*

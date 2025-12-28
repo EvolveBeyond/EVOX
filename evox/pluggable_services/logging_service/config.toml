@@ -1,0 +1,19 @@
+# Logging Service Configuration
+
+[service]
+name = "logging-service"
+port = 8006
+capabilities = ["logging", "event-logging", "structured-logging"]
+prerequisites = []
+
+[storage]
+backend = "file"
+log_file = "evox.log"
+
+[caching]
+default_ttl = 300
+enable_fallback = true
+
+[logging]
+level = "INFO"
+format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

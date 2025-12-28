@@ -33,6 +33,11 @@ evox new service user_service
 # Run in development mode
 evox maintenance sync
 evox maintenance status
+
+# Run your services
+evox run service user_service     # Run a specific service
+evox run project                # Run the entire project
+evox run project --dev         # Run project in development mode with auto-reload
 ```
 
 ## 🔄 Nested CLI Commands
@@ -52,6 +57,19 @@ evox new db <name>          # Add database configuration
 evox maintenance sync       # Sync dependencies via Rye
 evox maintenance health     # Run system-wide health checks
 evox maintenance status     # Overview of services, plugins, and system load
+```
+
+### Run Commands
+```bash
+evox run project            # Run the entire EVOX project with all services
+evox run service <name>     # Run a specific service by name
+evox run plugin <name>      # Run a specific plugin by name
+evox run                    # Alias for 'evox run project'
+
+# With development mode (auto-reload)
+evox run project --dev      # Run project in development mode
+evox run service <name> --dev   # Run service in development mode
+evox run plugin <name> --dev    # Run plugin in development mode
 ```
 
 ## 🏗️ Professional Blue-Prints

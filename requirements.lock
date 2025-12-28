@@ -69,6 +69,8 @@ toml==0.10.2
     # via evox
 tomli==2.3.0
     # via evox
+tomli-w==1.2.0
+    # via evox
 typer==0.9.4
     # via evox
 typing-extensions==4.15.0

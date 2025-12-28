@@ -11,6 +11,9 @@ Commands:
 - evox new service <name>
 - evox new plugin <name>
 - evox new db <name>
+- evox run project [--dev] (Run entire project)
+- evox run service <name> [--dev] (Run specific service)
+- evox run plugin <name> [--dev] (Run specific plugin)
 - evox maintenance sync
 - evox maintenance health
 - evox maintenance status
@@ -37,6 +40,9 @@ app.add_typer(new_app, name="new")
 
 maintenance_app = typer.Typer(help="Maintenance and system commands")
 app.add_typer(maintenance_app, name="maintenance")
+
+run_app = typer.Typer(help="Run EVOX components")
+app.add_typer(run_app, name="run")
 
 
 @new_app.command("project")
@@ -163,6 +169,117 @@ def status():
             typer.echo(f"{name:<20} {status:<15} {path}")
     else:
         typer.echo("\nPlugins: 0")
+
+
+@run_app.command("project")
+def run_project(dev: bool = typer.Option(False, "--dev", "-d", help="Run in development mode with auto-reload")):
+    """Run the entire EVOX project with all services."""
+    from evox.core.orchestrator import orchestrator
+    import asyncio
+    
+    typer.secho(f"🚀 Running EVOX project in {'development' if dev else 'production'} mode", fg=typer.colors.BLUE, bold=True)
+    
+    try:
+        # Run the orchestrator
+        asyncio.run(orchestrator.run(dev=dev))
+    except KeyboardInterrupt:
+        typer.secho("\n⚠️  Project stopped by user", fg=typer.colors.YELLOW)
+    except Exception as e:
+        typer.secho(f"❌ Error running project: {e}", fg=typer.colors.RED)
+
+
+@run_app.command("service")
+def run_service(name: str, dev: bool = typer.Option(False, "--dev", "-d", help="Run in development mode with auto-reload")):
+    """Run a specific service by name."""
+    project_manager = get_project_manager()
+    services = project_manager.list_services()
+    
+    # Find the service
+    target_service = None
+    for service in services:
+        if service["name"] == name:
+            target_service = service
+            break
+    
+    if not target_service:
+        typer.secho(f"❌ Service '{name}' not found", fg=typer.colors.RED)
+        return
+    
+    typer.secho(f"🚀 Running service '{name}' in {'development' if dev else 'production'} mode", fg=typer.colors.BLUE, bold=True)
+    
+    try:
+        # Add service path to Python path temporarily
+        import sys
+        service_path = target_service["path"]
+        if service_path not in sys.path:
+            sys.path.insert(0, service_path)
+        
+        # Import and run the service
+        import importlib.util
+        main_py = f"{service_path}/main.py"
+        spec = importlib.util.spec_from_file_location(f"{name}_module", main_py)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        
+        # Look for the service instance and run it
+        if hasattr(module, "svc"):
+            service_instance = module.svc
+            service_instance.run(dev=dev)
+        else:
+            typer.secho(f"❌ Service '{name}' does not have a service instance (svc)", fg=typer.colors.RED)
+    except Exception as e:
+        typer.secho(f"❌ Error running service '{name}': {e}", fg=typer.colors.RED)
+
+
+@run_app.command("plugin")
+def run_plugin(name: str, dev: bool = typer.Option(False, "--dev", "-d", help="Run in development mode")):
+    """Run a specific plugin by name."""
+    plugin_manager = get_plugin_manager()
+    plugins = plugin_manager.list_plugins()
+    
+    # Find the plugin
+    target_plugin = None
+    for plugin in plugins:
+        if plugin["name"] == name:
+            target_plugin = plugin
+            break
+    
+    if not target_plugin:
+        typer.secho(f"❌ Plugin '{name}' not found", fg=typer.colors.RED)
+        return
+    
+    typer.secho(f"🔌 Running plugin '{name}'", fg=typer.colors.BLUE, bold=True)
+    typer.secho("Note: Plugins are typically loaded by services, not run directly", fg=typer.colors.YELLOW)
+    
+    try:
+        # Add plugin path to Python path temporarily
+        import sys
+        plugin_path = target_plugin["path"]
+        if plugin_path not in sys.path:
+            sys.path.insert(0, plugin_path)
+        
+        # Import and run the plugin
+        import importlib.util
+        main_py = f"{plugin_path}/main.py"
+        spec = importlib.util.spec_from_file_location(f"{name}_module", main_py)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        
+        # Execute the plugin if it has a main execution block
+        if hasattr(module, "main"):
+            module.main()
+        elif hasattr(module, "__main__"):
+            module.__main__()
+        else:
+            typer.secho(f"ℹ️  Plugin '{name}' loaded successfully but has no main execution function", fg=typer.colors.GREEN)
+    except Exception as e:
+        typer.secho(f"❌ Error running plugin '{name}': {e}", fg=typer.colors.RED)
+
+
+@app.command("run")
+def run_all(dev: bool = typer.Option(False, "--dev", "-d", help="Run in development mode with auto-reload")):
+    """Run the entire EVOX project (alias for run project)."""
+    run_project(dev=dev)
 
 
 if __name__ == "__main__":

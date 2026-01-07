@@ -1,0 +1,12 @@
+# user_service Service Configuration
+
+[service]
+name = "user_service"
+port = 8000
+
+[storage]
+backend = "memory"
+
+[caching]
+default_ttl = 300
+enable_fallback = true

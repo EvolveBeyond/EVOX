@@ -1,9 +1,9 @@
 [project]
-name = "evox"
-version = "0.1.2-beta"
-description = "Modern Python Microservices Framework - Data-Intent-Aware, Rye-Native"
+name = "evoid"
+version = "0.2.3_Beta"
+description = "EVOILD: Evolutionary Intent-Oriented Lightweight Distribution - Data-Intent-Aware Microservices Framework"
 authors = [
-    { name = "Evox Team", email = "dev@evox.dev" }
+    { name = "EVOID Team", email = "dev@evoid.dev" }
 ]
 dependencies = [
     "fastapi>=0.104.0,<0.105.0",
@@ -23,7 +23,7 @@ dependencies = [
 requires-python = ">=3.13.1"
 readme = "README.md"
 license = { text = "Apache-2.0" }
-keywords = ["microservices", "framework", "data-intent-aware", "rye-native", "fastapi", "distributed-systems"]
+keywords = ["microservices", "framework", "data-intent-aware", "rye-native", "fastapi", "distributed-systems", "evoid", "intent-oriented"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -54,10 +54,10 @@ dev-dependencies = [
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["evox"]
+packages = ["evoid"]
 
 [project.scripts]
-evox = "evox.cli.main:app"
+evo = "evoid.cli.main:app"
 
 # Core dependencies for the framework
 [project.optional-dependencies]
@@ -110,9 +110,9 @@ test = [
 ]
 
 [tool.rye.scripts]
-dev = "evox run --dev"
-health = "evox health"
-test = "evox test"
+dev = "evo run --dev"
+health = "evo health"
+test = "evo test"
 
 [tool.ruff]
 line-length = 120

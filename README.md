@@ -1,6 +1,6 @@
-# EVOX: The Smart companion for Python 3.13+ Services
+# EVOID: Evolutionary Intent-Oriented Lightweight Distribution
 
-EVOX is a next-generation, intent-aware service framework that makes building resilient, scalable backend services simple and intelligent. Built for Python 3.13+ with a focus on multi-layered resilience and automatic adaptation.
+EVOID (Evolutionary Intent-Oriented Lightweight Distribution) is a next-generation, intent-aware service framework that makes building resilient, scalable backend services simple and intelligent. Built for Python 3.13+ with a focus on multi-layered resilience and automatic adaptation.
 
 ## 🚀 Quick Start
 
@@ -8,10 +8,10 @@ EVOX is a next-generation, intent-aware service framework that makes building re
 
 ```bash
 # Using Rye (recommended)
-rye add evox
+rye add evoid
 
 # Or using pip
-pip install evox
+pip install evoid
 
 # Install different tiers:
 pip install evox[nano]      # Core + In-Memory Cache
@@ -24,57 +24,57 @@ pip install evox[full]      # All providers (Redis, Advanced Monitoring, etc.)
 
 ```bash
 # Create a new project
-evox new project my_project
+evo new project my_project
 cd my_project
 
 # Create a service
-evox new service user_service
+evo new service user_service
 
 # Run in development mode
-evox maintenance sync
-evox maintenance status
+evo maintenance sync
+evo maintenance status
 
 # Run your services
-evox run service user_service     # Run a specific service
-evox run project                # Run the entire project
-evox run project --dev         # Run project in development mode with auto-reload
+evo run service user_service     # Run a specific service
+evo run project                # Run the entire project
+evo run project --dev         # Run project in development mode with auto-reload
 ```
 
 ## 🔄 Nested CLI Commands
 
-EVOX features an intuitive nested command structure:
+EVOID features an intuitive nested command structure:
 
 ### Create Commands
 ```bash
-evox new project <name>     # Create a new project
-evox new service <name>     # Create a new service
-evox new plugin <name>      # Create a new plugin template
-evox new db <name>          # Add database configuration
+evo new project <name>     # Create a new project
+evo new service <name>     # Create a new service
+evo new plugin <name>      # Create a new plugin template
+evo new db <name>          # Add database configuration
 ```
 
 ### Maintenance Commands
 ```bash
-evox maintenance sync       # Sync dependencies via Rye
-evox maintenance health     # Run system-wide health checks
-evox maintenance status     # Overview of services, plugins, and system load
+evo maintenance sync       # Sync dependencies via Rye
+evo maintenance health     # Run system-wide health checks
+evo maintenance status     # Overview of services, plugins, and system load
 ```
 
 ### Run Commands
 ```bash
-evox run project            # Run the entire EVOX project with all services
-evox run service <name>     # Run a specific service by name
-evox run plugin <name>      # Run a specific plugin by name
-evox run                    # Alias for 'evox run project'
+evo run project            # Run the entire EVOID project with all services
+evo run service <name>     # Run a specific service by name
+evo run plugin <name>      # Run a specific plugin by name
+evo run                    # Alias for 'evo run project'
 
 # With development mode (auto-reload)
-evox run project --dev      # Run project in development mode
-evox run service <name> --dev   # Run service in development mode
-evox run plugin <name> --dev    # Run plugin in development mode
+evo run project --dev      # Run project in development mode
+evo run service <name> --dev   # Run service in development mode
+evo run plugin <name> --dev    # Run plugin in development mode
 ```
 
 ## 🏗️ Professional Blue-Prints
 
-EVOX provides three ready-to-use blueprints for different project scales:
+EVOID provides three ready-to-use blueprints for different project scales:
 
 ### 1. Nano Project (`nano_project/`)
 Perfect for fast, single-file microservices:
@@ -99,7 +99,7 @@ For adaptive, intelligence-aware systems:
 
 ## 🔄 Dual Syntax Support
 
-EVOX supports two ways to build services:
+EVOID supports two ways to build services:
 
 ### Function-Based Syntax (Simple & Familiar)
 
@@ -142,7 +142,7 @@ class UserController:
 
 ## 🔧 Type-Safe Architecture
 
-EVOX provides full type safety with modern Python features:
+EVOID provides full type safety with modern Python features:
 
 ### Type-Safe Dependency Injection
 
@@ -168,10 +168,10 @@ async def get_user(user_id: str = Param(str)) -> Dict[str, str]:
 
 ## 🌍 Environmental Intelligence
 
-EVOX understands your data and context automatically:
+EVOID understands your data and context automatically:
 
 ### Multi-Layered Resilience
-EVOX implements a sophisticated caching system with priority fallback:
+EVOID implements a sophisticated caching system with priority fallback:
 - **User-defined cache** (highest priority)
 - **In-Memory cache** (fast access)
 - **File/DB-based cache** (persistent storage)
@@ -184,11 +184,11 @@ The framework automatically adapts based on your declared intentions:
 
 ## 🧠 Intelligence at the Schema Level
 
-In EVOX, your **Data Model is your Infrastructure Policy**. By defining a Pydantic field with intent metadata, you are telling EVOX how to treat that data (e.g., "This field is `SENSITIVE`, so encrypt it and mask it in logs").
+In EVOID, your **Data Model is your Infrastructure Policy**. By defining a Pydantic field with intent metadata, you are telling EVOID how to treat that data (e.g., "This field is `SENSITIVE`, so encrypt it and mask it in logs").
 
 ### The Power of Intent-Aware Pydantic Models
 
-Define your data intents directly in your Pydantic models, and EVOX automatically applies the appropriate handling:
+Define your data intents directly in your Pydantic models, and EVOID automatically applies the appropriate handling:
 
 ```python
 from pydantic import BaseModel, Field
@@ -212,7 +212,7 @@ class ProfileUpdate(BaseModel):
     )
 ```
 
-Based on these intents, EVOX automatically:
+Based on these intents, EVOID automatically:
 - Treats `name` as critical data that must be saved at all costs
 - Encrypts and masks `email` as sensitive data
 - Applies optimized caching strategies for `age` as ephemeral data
@@ -231,14 +231,14 @@ async def create_user(data: Dict = Body(dict)) -> Dict:
     return {"status": "created"}
 ```
 
-**After (EVOX Intent-Aware style):**
+**After (EVOID Intent-Aware style):**
 ```python
 # Intent-aware approach - automatic handling
-from evox import service, post, Body
+from evoid import service, post, Body
 
 @post("/users")
 async def create_user(request: ProfileUpdate = Body(...)) -> Dict:
-    # EVOX automatically handles intents based on model definition
+    # EVOID automatically handles intents based on model definition
     # No manual encryption, logging, or caching logic needed
     return {"status": "created"}
 ```
@@ -268,7 +268,7 @@ async def process_request(request: HighPrioritySchema = Body(HighPrioritySchema)
 
 ## 🏗️ Quick Start from Blue-Prints
 
-Check out the professional blue-prints in `evox/examples/`:
+Check out the professional blue-prints in `evoid/examples/`:
 - `nano_project/` - Fast, single-file microservices
 - `enterprise_system/` - Multi-service, class-based architecture
 - `smart_gateway/` - Intelligence-driven adaptive systems
@@ -293,7 +293,7 @@ Features:
 - Direct execution with default fallback values
 - Demonstrates EVOX's flexibility from simple to complex
 
-EVOX adapts to your skill level: from simple functions to complex enterprise systems.
+EVOID adapts to your skill level: from simple functions to complex enterprise systems.
 
 ## 🤝 Contributing
 

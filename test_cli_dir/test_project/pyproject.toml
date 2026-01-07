@@ -1,0 +1,49 @@
+[project]
+name = "test_project"
+version = "0.1.0"
+description = "EVOX microservices project - Rye-Native"
+authors = [
+    { name = "Developer", email = "dev@example.com" }
+]
+dependencies = [
+    "evox>=0.0.3-alpha",
+]
+requires-python = ">= 3.11"
+readme = "README.md"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "pytest>=7.0.0,<8.0.0",
+    "httpx>=0.25.0,<0.26.0",
+    "black>=23.0.0,<24.0.0",
+    "isort>=5.12.0,<6.0.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["services", "plugins"]
+
+[project.scripts]
+dev = "evox run --dev"
+health = "evox health"
+
+test = "evox test"
+
+[tool.rye.scripts]
+dev = "evox run --dev"
+health = "evox health"
+test = "evox test"

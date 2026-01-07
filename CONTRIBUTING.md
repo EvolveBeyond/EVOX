@@ -1,6 +1,6 @@
-# Contributing to EVOX v0.1.2-beta
+# Contributing to EVOX v0.2.3_Beta
 
-Welcome! We're excited that you're interested in contributing to EVOX. This document provides guidelines and information to help you get started with the **v0.1.2-beta** release, optimized for **Python 3.13+**.
+Welcome! We're excited that you're interested in contributing to EVOX. This document provides guidelines and information to help you get started with the **v0.2.3_Beta** release, optimized for **Python 3.13+**.
 
 ## Code of Conduct
 

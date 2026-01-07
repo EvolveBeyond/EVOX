@@ -18,8 +18,8 @@ from typing import Any
 from pydantic import BaseModel
 import psutil
 import asyncio
-from .queue import get_priority_queue, PriorityLevel
-from .intents import extract_intents, model_intent_score, Intent, get_intent_registry
+from ...infrastructure.queue.priority_queue import get_priority_queue, PriorityLevel
+from ...data.intents.intent_system import extract_intents, model_intent_score, Intent, get_intent_registry
 from enum import Enum
 import logging
 

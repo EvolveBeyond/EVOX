@@ -22,8 +22,8 @@ import asyncio
 from fastapi import Request
 from pydantic import BaseModel
 
-from .queue import PriorityLevel, get_priority_queue
-from .auth import get_auth_manager
+from ..infrastructure.queue.priority_queue import PriorityLevel, get_priority_queue
+from ..infrastructure.auth.auth_manager import get_auth_manager
 
 
 class ServiceProxy:

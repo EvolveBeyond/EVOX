@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 import time
 import logging
-from .intents import Intent, get_intent_registry
+from ...data.intents.intent_system import Intent, get_intent_registry
 
 
 class PriorityLevel(Enum):
@@ -285,7 +285,7 @@ class PriorityQueue:
             async with semaphore:
                 # Import intelligence here to avoid circular import
                 from .intelligence import get_current_context_status, SystemStatus
-                from .intents import Intent, get_intent_registry
+                from ...data.intents.intent_system import Intent, get_intent_registry
                 
                 # Check system status and apply admission control
                 system_status = get_current_context_status()

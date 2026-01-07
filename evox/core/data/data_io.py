@@ -23,11 +23,11 @@ import logging
 from enum import Enum
 import threading
 
-from .intents import Intent, get_intent_registry
-from .inject import get_health_registry, get_service_health
-from .intelligence import get_current_context_status, SystemStatus
-from .common import BaseProvider
-from .storage_provider import SQLiteStorageProvider, MemoryStorageProvider
+from .intents.intent_system import Intent, get_intent_registry
+from ..infrastructure.dependency_injection.injector import get_health_registry, get_service_health
+from ..monitoring.intelligence.environmental_intelligence import get_current_context_status, SystemStatus
+from ..data.storage.providers.base_provider import BaseProvider
+from ..data.storage.registry import SQLiteStorageProvider, MemoryStorageProvider, service_registry
 
 
 class CircuitState(Enum):
@@ -79,18 +79,42 @@ class DataIO:
         Rationale: Establishes the primary and fallback storage providers
         for resilient operations.
         """
-        # Get primary provider via DI system
-        health_registry = get_health_registry()
+        # First try to get providers from service registry
+        providers = service_registry.list_providers()
         
-        # Look for a primary storage provider (could be SQLite, Redis, etc.)
-        for service_name, health_info in health_registry.items():
-            instance = health_info.get("instance")
-            if isinstance(instance, BaseProvider):
-                if self._primary_provider is None:
-                    self._primary_provider = instance
-                else:
-                    # Use the first additional provider as fallback if needed
-                    if self._fallback_provider is None:
+        if providers:
+            # Try to find a suitable primary provider from registry
+            for provider_name in providers:
+                provider = service_registry.get_provider(provider_name)
+                if provider and isinstance(provider, BaseProvider):
+                    # Prefer providers that support transactions for critical data
+                    props = getattr(provider, 'provider_properties', {})
+                    supports_transactions = props.get('supports_transactions', False)
+                    supports_replication = props.get('supports_replication', False)
+                    
+                    # Prefer providers with transaction/replication support as primary
+                    if supports_transactions and supports_replication:
+                        self._primary_provider = provider
+                        break
+                    elif self._primary_provider is None:
+                        self._primary_provider = provider
+            
+            # Set fallback provider from remaining providers
+            for provider_name in providers:
+                provider = service_registry.get_provider(provider_name)
+                if (provider and isinstance(provider, BaseProvider) and 
+                    provider != self._primary_provider and self._fallback_provider is None):
+                    self._fallback_provider = provider
+        
+        # If no providers found in registry, fall back to health registry
+        if self._primary_provider is None:
+            health_registry = get_health_registry()
+            for service_name, health_info in health_registry.items():
+                instance = health_info.get("instance")
+                if isinstance(instance, BaseProvider):
+                    if self._primary_provider is None:
+                        self._primary_provider = instance
+                    elif self._fallback_provider is None:
                         self._fallback_provider = instance
         
         # If no fallback provider found, create a memory-based one
@@ -657,6 +681,8 @@ class BackgroundSyncManager:
 
 # Global DataIO instance - initialize without starting background sync
 _data_io = DataIO()
+
+data_io = _data_io  # Public alias for backward compatibility
 
 
 def get_data_io() -> DataIO:

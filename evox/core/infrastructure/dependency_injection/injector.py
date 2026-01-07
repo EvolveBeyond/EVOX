@@ -19,7 +19,7 @@ import asyncio
 import logging
 from typing import Annotated
 
-from .common import BaseProvider
+from ...data.storage.providers.base_provider import BaseProvider
 
 
 

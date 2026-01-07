@@ -82,15 +82,15 @@ def sync():
 
 
 @new_app.command("plugin")
-def new_plugin(name: str):
+def new_plugin(name: str, plugin_type: str = typer.Option("generic", "--type", help="Type of plugin to create (e.g., storage)")):
     """Create a new plugin template."""
     plugin_manager = get_plugin_manager()
-    success = plugin_manager.create_plugin_template(name)
+    success = plugin_manager.create_plugin_template(name, plugin_type=plugin_type)
     
     if success:
-        typer.secho(f"✅ Created plugin template '{name}'", fg=typer.colors.GREEN)
+        typer.secho(f"✅ Created {plugin_type} plugin template '{name}'", fg=typer.colors.GREEN)
     else:
-        typer.secho(f"❌ Failed to create plugin template '{name}'", fg=typer.colors.RED)
+        typer.secho(f"❌ Failed to create {plugin_type} plugin template '{name}'", fg=typer.colors.RED)
 
 
 @new_app.command("db")

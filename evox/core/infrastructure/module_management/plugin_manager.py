@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Tuple
 import tomli
 import asyncio
 from enum import Enum
-from .registry import get_service_registry, ServiceInfo
+from ..registry.registry import get_service_registry, ServiceInfo
 
 
 class PluginStatus(Enum):
@@ -258,6 +258,67 @@ class PluginManager:
                 errors.append(f"Invalid config.toml: {str(e)}")
         
         return len(errors) == 0, errors
+    
+    def create_plugin_template(self, name: str, plugin_type: str = "generic") -> bool:
+        """
+        Create a new plugin template with the specified type.
+        
+        Args:
+            name: Name of the plugin
+            plugin_type: Type of plugin to create (e.g., "storage")
+            
+        Returns:
+            True if plugin was created successfully, False otherwise
+        """
+        plugin_path = self.plugins_path / name
+        
+        # Check if plugin already exists
+        if plugin_path.exists():
+            print(f"Plugin '{name}' already exists!")
+            return False
+        
+        # Create plugin directory
+        plugin_path.mkdir(parents=True, exist_ok=True)
+        
+        # Create the plugin files based on type
+        if plugin_type == "storage":
+            return self._create_storage_plugin(plugin_path, name)
+        else:
+            return self._create_generic_plugin(plugin_path, name)
+    
+    def _create_generic_plugin(self, plugin_path: Path, name: str) -> bool:
+        """Create a generic plugin template"""
+        # Create config.toml
+        config_content = f"""# EVOX Plugin Configuration\n\n[service]\nname = \"{name}\"\nport = 8000\nprerequisites = []\ncapabilities = [\"generic\"]\n\n[plugin]\ntype = \"generic\"\nversion = \"0.0.1\"\n"""
+        
+        config_path = plugin_path / "config.toml"
+        with open(config_path, 'w') as f:
+            f.write(config_content)
+        
+        # Create main.py
+        main_content = f"""\nimport asyncio\nfrom evox.core.inject import inject\n\n\nclass {name.title().replace('-', '')}Plugin:\n    def __init__(self):\n        self.name = \"{name}\"\n        \n    async def start(self):\n        print(f\"Starting {{self.name}} plugin...\")\n        \n    async def stop(self):\n        print(f\"Stopping {{self.name}} plugin...\")\n\n\n# Plugin factory function\nasync def create_plugin():\n    return {name.title().replace('-', '')}Plugin()\n\n\nif __name__ == \"__main__\":\n    # For testing the plugin directly\n    import asyncio\n    plugin = asyncio.run(create_plugin())\n    asyncio.run(plugin.start())\n"""
+        main_path = plugin_path / "main.py"
+        with open(main_path, 'w') as f:
+            f.write(main_content)
+        
+        return True
+    
+    def _create_storage_plugin(self, plugin_path: Path, name: str) -> bool:
+        """Create a storage plugin template"""
+        # Create config.toml
+        config_content = f"""# EVOX Storage Plugin Configuration\n\n[service]\nname = \"{name}\"\nport = 8000\nprerequisites = []\ncapabilities = [\"storage\", \"provider\"]\n\n[plugin]\ntype = \"storage\"\nversion = \"0.0.1\"\n\n[storage]\nprovider = \"{name}\"\nconnection_timeout = 30\nhealth_check_interval = 60\n"""
+        
+        config_path = plugin_path / "config.toml"
+        with open(config_path, 'w') as f:
+            f.write(config_content)
+        
+        # Create main.py
+        main_content = f"""\nimport asyncio\nfrom evox.core.storage_provider import StorageProviderProtocol\nfrom evox.core.intents import Intent\n\n\nclass {name.title().replace('-', '')}StorageProvider(StorageProviderProtocol):\n    \"\"\"Storage provider for {name}\"\"\"\n    \n    def __init__(self):\n        self._is_healthy = True\n        self._config = {{}}\n        \n    async def read(self, key: str, intent: Intent = Intent.STANDARD) -> any:\n        \"\"\"Read data by key\"\"\"\n        # Implement read logic here\n        return None\n    \n    async def write(self, key: str, value: any, intent: Intent = Intent.STANDARD) -> bool:\n        \"\"\"Write data with key\"\"\"\n        # Implement write logic here\n        return True\n    \n    async def delete(self, key: str, intent: Intent = Intent.STANDARD) -> bool:\n        \"\"\"Delete data by key\"\"\"\n        # Implement delete logic here\n        return True\n    \n    async def check_health(self) -> bool:\n        \"\"\"Check provider health\"\"\"\n        # Implement health check logic here\n        return self._is_healthy\n    \n    @property\n    def is_healthy(self) -> bool:\n        \"\"\Get health status\"\"\"\n        return self._is_healthy\n    \n    @property\n    def provider_properties(self) -> dict:\n        \"\"\Get provider properties\"\"\"\n        return {{\n            \"type\": \"{name}\",\n            \"supports_transactions\": False,\n            \"supports_replication\": False\n        }}\n\n\n# Plugin factory function\nasync def create_provider():\n    return {name.title().replace('-', '')}StorageProvider()\n\n\nif __name__ == \"__main__\":\n    # For testing the storage provider directly\n    import asyncio\n    provider = asyncio.run(create_provider())\n    print(f\"{name} storage provider created.\")\n    print(f\"Health: {{await provider.check_health()}}\")\n"""
+        main_path = plugin_path / "main.py"
+        with open(main_path, 'w') as f:
+            f.write(main_content)
+        
+        return True
 
 
 # Global plugin manager instance

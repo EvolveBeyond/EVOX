@@ -18,11 +18,19 @@ from typing import get_origin, get_args
 from datetime import datetime
 import logging
 
-from .queue import PriorityLevel, get_priority_queue
-from .inject import get_health_registry, get_service_health
-from .common import BaseProvider
-from .intents import Intent, get_intent_registry
-from .lifecycle import on_service_init
+from ..infrastructure.queue.priority_queue import PriorityLevel, get_priority_queue
+from ..infrastructure.dependency_injection.injector import get_health_registry, get_service_health
+from ..data.storage.providers.base_provider import BaseProvider
+from ..data.intents.intent_system import Intent, get_intent_registry
+from ..infrastructure.lifecycle import on_service_init
+
+# New imports for advanced features
+from ..utilities.serialization.fury_codec import fury_codec, FuryNotAvailable, serialize_object, deserialize_object
+from ..utilities.mapping.model_mapper import model_mapper, map_models
+from ..communication.message_bus import message_bus, publish_message, subscribe_to_topic
+from ..infrastructure.scheduler.task_scheduler import task_manager, run_in_background, schedule_delayed, schedule_recurring
+from ..utilities.caching.cache_layer import cache_layer, cache_get, cache_set, cached
+from ..monitoring.metrics.performance_tracker import performance_bench, benchmark_latency, benchmark_throughput
 
 
 class ServiceBuilder:
@@ -63,6 +71,11 @@ class ServiceBuilder:
         
         # Store service instance for DI access
         self._instance = None
+        
+        # Initialize new feature components
+        self._use_fury = False
+        self._cache_config = {'l1_size_mb': 100, 'redis_url': 'redis://localhost:6379'}
+        self._benchmarking_enabled = False
     
     def port(self, port: int):
         """Set the service port"""
@@ -82,7 +95,7 @@ class ServiceBuilder:
         ServiceBuilder._instances[self.name] = self
         
         # Register with inject system for type-safe injection
-        from .inject import HealthAwareInject
+        from ..infrastructure.dependency_injection.injector import HealthAwareInject
         HealthAwareInject.register_instance(self.name, self)
         
         # Trigger lifecycle event for service initialization
@@ -164,6 +177,11 @@ class ServiceBuilder:
                         # Merge common kwargs with method-specific kwargs
                         merged_kwargs = {**common_kwargs, **kwargs}
                         
+                        # Remove intent and priority from kwargs that are passed to FastAPI (not supported)
+                        intent = merged_kwargs.pop('intent', None)
+                        priority = merged_kwargs.pop('priority', 'medium')
+                        serialization = merged_kwargs.pop('serialization', 'json')
+                        
                         # Register for each path
                         for path in paths:
                             full_path = prefix + path if prefix else path
@@ -207,6 +225,7 @@ class ServiceBuilder:
             # Extract priority from kwargs if present
             priority_str = kwargs.pop('priority', 'medium')
             intent = kwargs.pop('intent', None)
+            serialization = kwargs.pop('serialization', 'json')
             
             try:
                 priority = PriorityLevel[priority_str.upper()]
@@ -260,6 +279,62 @@ class ServiceBuilder:
             })
             return func
         return decorator
+    
+    def enable_fury_serialization(self, enabled: bool = True):
+        """Enable Fury serialization for this service"""
+        self._use_fury = enabled
+        if enabled and not fury_codec.fury_instance:
+            logging.warning("Fury serialization requested but not available")
+        return self
+    
+    def register_model_mapping(self, api_model: type, core_model: type):
+        """Register model mapping for automatic conversion"""
+        register_mapper(api_model, core_model)
+        return self
+    
+    def configure_cache(self, l1_size_mb: int = 100, redis_url: str = "redis://localhost:6379"):
+        """Configure cache settings"""
+        self._cache_config = {
+            'l1_size_mb': l1_size_mb,
+            'redis_url': redis_url
+        }
+        return self
+    
+    def enable_benchmarking(self, enabled: bool = True):
+        """Enable benchmarking endpoints"""
+        self._benchmarking_enabled = enabled
+        if enabled:
+            self._add_benchmark_endpoints()
+        return self
+    
+    def _add_benchmark_endpoints(self):
+        """Add benchmarking endpoints to service"""
+        from fastapi import BackgroundTasks
+        from .benchmarking.performance_bench import benchmark_serialization
+        
+        @self.router.get("/benchmark/serialization")
+        async def run_serialization_bench(severity: str = "moderate", duration: int = 30):
+            """Run serialization benchmark"""
+            result = await benchmark_serialization(severity, duration)
+            return result
+        
+        @self.router.post("/benchmark/custom")
+        async def run_custom_benchmark(config: dict, background_tasks: BackgroundTasks):
+            """Run custom benchmark"""
+            # Implementation would parse config and run specified benchmark
+            return {"status": "benchmark_started"}
+    
+    def with_message_bus(self):
+        """Enable message bus functionality for this service"""
+        return self
+    
+    def with_task_manager(self):
+        """Enable background task management for this service"""
+        return self
+    
+    def with_model_mapping(self):
+        """Enable automatic model mapping for this service"""
+        return self
     
     async def gather(self, 
                      *requests,
@@ -421,88 +496,131 @@ def Service(service_type):
 
 
 # Decorators for endpoints
-def get(path: str, intent: str = None, priority: str = "medium", **kwargs):
-    """GET endpoint decorator with intent and priority support"""
+def get(path: str, intent: str = None, priority: str = "medium", 
+     serialization: str = "json", **kwargs):
+    """GET endpoint decorator with intent, priority, and serialization support"""
     def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["GET"],
-            "kwargs": {**kwargs, "intent": intent, "priority": priority}
+            "kwargs": {**kwargs, "intent": intent, "priority": priority, "serialization": serialization}
         }
         return func
     return decorator
 
-def post(path: str, intent: str = None, priority: str = "medium", **kwargs):
-    """POST endpoint decorator with intent and priority support"""
+def post(path: str, intent: str = None, priority: str = "medium", 
+     serialization: str = "json", **kwargs):
+    """POST endpoint decorator with intent, priority, and serialization support"""
     def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["POST"],
-            "kwargs": {**kwargs, "intent": intent, "priority": priority}
+            "kwargs": {**kwargs, "intent": intent, "priority": priority, "serialization": serialization}
         }
         return func
     return decorator
 
-def put(path: str, intent: str = None, priority: str = "medium", **kwargs):
-    """PUT endpoint decorator with intent and priority support"""
+def put(path: str, intent: str = None, priority: str = "medium", 
+     serialization: str = "json", **kwargs):
+    """PUT endpoint decorator with intent, priority, and serialization support"""
     def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["PUT"],
-            "kwargs": {**kwargs, "intent": intent, "priority": priority}
+            "kwargs": {**kwargs, "intent": intent, "priority": priority, "serialization": serialization}
         }
         return func
     return decorator
 
-def delete(path: str, intent: str = None, priority: str = "medium", **kwargs):
-    """DELETE endpoint decorator with intent and priority support"""
+def delete(path: str, intent: str = None, priority: str = "medium", 
+     serialization: str = "json", **kwargs):
+    """DELETE endpoint decorator with intent, priority, and serialization support"""
     def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["DELETE"],
-            "kwargs": {**kwargs, "intent": intent, "priority": priority}
+            "kwargs": {**kwargs, "intent": intent, "priority": priority, "serialization": serialization}
         }
         return func
     return decorator
 
-def patch(path: str, intent: str = None, priority: str = "medium", **kwargs):
-    """PATCH endpoint decorator with intent and priority support"""
+def patch(path: str, intent: str = None, priority: str = "medium", 
+     serialization: str = "json", **kwargs):
+    """PATCH endpoint decorator with intent, priority, and serialization support"""
     def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["PATCH"],
-            "kwargs": {**kwargs, "intent": intent, "priority": priority}
+            "kwargs": {**kwargs, "intent": intent, "priority": priority, "serialization": serialization}
         }
         return func
     return decorator
 
-def head(path: str, intent: str = None, priority: str = "medium", **kwargs):
-    """HEAD endpoint decorator with intent and priority support"""
+def head(path: str, intent: str = None, priority: str = "medium", 
+     serialization: str = "json", **kwargs):
+    """HEAD endpoint decorator with intent, priority, and serialization support"""
     def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["HEAD"],
-            "kwargs": {**kwargs, "intent": intent, "priority": priority}
+            "kwargs": {**kwargs, "intent": intent, "priority": priority, "serialization": serialization}
         }
         return func
     return decorator
 
-def options(path: str, intent: str = None, priority: str = "medium", **kwargs):
-    """OPTIONS endpoint decorator with intent and priority support"""
+def options(path: str, intent: str = None, priority: str = "medium", 
+     serialization: str = "json", **kwargs):
+    """OPTIONS endpoint decorator with intent, priority, and serialization support"""
     def decorator(func: Callable[..., Any]):
         # This will be used by ServiceBuilder.endpoint
         func._evox_endpoint = {
             "path": path,
             "methods": ["OPTIONS"],
-            "kwargs": {**kwargs, "intent": intent, "priority": priority}
+            "kwargs": {**kwargs, "intent": intent, "priority": priority, "serialization": serialization}
         }
         return func
+    return decorator
+
+
+def get_cached(path: str, ttl: int = 300, **kwargs):
+    """GET endpoint with automatic caching"""
+    def decorator(func):
+        original_func = func
+        
+        async def wrapper(*args, **kwargs):
+            # Generate cache key from request
+            import hashlib
+            cache_key = hashlib.md5(f"{path}{str(args)}{str(sorted(kwargs.items()))}".encode()).hexdigest()
+            
+            # Try cache first
+            from .caching.cache_layer import cache_get
+            cached_result = await cache_get(cache_key)
+            if cached_result is not None:
+                return cached_result
+            
+            # Execute original function
+            result = await original_func(*args, **kwargs)
+            
+            # Cache result
+            from .caching.cache_layer import cache_set
+            await cache_set(cache_key, result, ttl)
+            
+            return result
+        
+        # Preserve endpoint metadata
+        wrapper._evox_endpoint = {
+            "path": path,
+            "methods": ["GET"],
+            "kwargs": kwargs,
+            "ttl": ttl
+        }
+        return wrapper
     return decorator
 
 

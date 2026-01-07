@@ -13,7 +13,7 @@ from evox import service, get, post, Body, Param
 from typing import Dict, Any
 from pydantic import BaseModel, Field
 from typing import Annotated
-from evox.core.intents import Intent
+from evox.core.data.intents.intent_system import Intent
 
 
 # Functional Service Example (Pydantic-Enhanced)

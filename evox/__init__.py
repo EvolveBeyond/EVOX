@@ -11,8 +11,8 @@ __version__ = "0.1.2-beta"
 
 # Export core components
 from .core import (
-    service, Service, get, post, put, delete, endpoint,
-    Controller, GET, POST, PUT, DELETE, Intent, Param, Query, Body,
+    service, Service, get, post, put, delete, patch, head, options, endpoint,
+    Controller, GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, Intent, Param, Query, Body,
     proxy, data_io, data_intent, inject, inject_from_annotation, override, reset_overrides, scheduler,
     PriorityLevel, get_priority_queue, initialize_queue,
     auth, AuthManager, AuthConfig, CIAClassification,
@@ -24,8 +24,8 @@ from .core import (
 )
 
 __all__ = [
-    "service", "Service", "get", "post", "put", "delete", "endpoint",
-    "Controller", "GET", "POST", "PUT", "DELETE", "Intent", "Param", "Query", "Body",
+    "service", "Service", "get", "post", "put", "delete", "patch", "head", "options", "endpoint",
+    "Controller", "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "Intent", "Param", "Query", "Body",
     "proxy", "data_io", "data_intent", "inject", "inject_from_annotation", "override", "reset_overrides", "scheduler",
     "PriorityLevel", "get_priority_queue", "initialize_queue",
     "auth", "AuthManager", "AuthConfig", "CIAClassification",
